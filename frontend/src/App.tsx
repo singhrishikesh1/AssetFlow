@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from './services/api';
 import { Html5Qrcode } from 'html5-qrcode';
+import { jsPDF } from 'jspdf';
 import {
   Building2, Laptop, AlertTriangle,
   Wrench, ClipboardCheck, History, BarChart3,
@@ -221,7 +222,27 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [selectedBookingDate, setSelectedBookingDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const getWeekDays = () => {
+    const days = [];
+    const today = new Date();
+    for (let i = -2; i < 8; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      const isoDate = date.toISOString().split('T')[0];
+      const dayName = i === 0 ? 'Today' : date.toLocaleDateString('en-US', { weekday: 'short' });
+      const dayNum = date.getDate();
+      const monthName = date.toLocaleDateString('en-US', { month: 'short' });
+      days.push({ name: dayName, num: dayNum, month: monthName, dateStr: isoDate });
+    }
+    return days;
+  };
   const [maintenance, setMaintenance] = useState<MaintenanceRequest[]>([]);
+  
+  // QR Code Modal States
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [qrModalContent, setQrModalContent] = useState<{ title: string; subtitle: string; codeValue: string } | null>(null);
+  const qrCanvasRef = useRef<HTMLCanvasElement>(null);
   const [audits, setAudits] = useState<AuditCycle[]>([]);
   const [deltaLogs, setDeltaLogs] = useState<DeltaLog[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -351,6 +372,36 @@ export default function App() {
       }
     };
   }, [qrScanner, activeTab]);
+
+  // Generate QR Code inside canvas
+  useEffect(() => {
+    if (qrModalOpen && qrModalContent && qrCanvasRef.current) {
+      import('qrcode').then(({ default: QRCode }) => {
+        QRCode.toCanvas(qrCanvasRef.current, qrModalContent.codeValue, {
+          width: 200,
+          margin: 1.5,
+          color: {
+            dark: '#000000',
+            light: '#ffffff'
+          }
+        }, (error) => {
+          if (error) console.error("Error generating QR:", error);
+        });
+      });
+    }
+  }, [qrModalOpen, qrModalContent]);
+
+  // Synchronize booking form details when opened
+  useEffect(() => {
+    if (bookingModalOpen) {
+      setBookForm(prev => ({
+        ...prev,
+        date: selectedBookingDate,
+        resource: assets.filter(a => a.shared)[0]?.name || 'Conference Room B2',
+        employee: employees.find(e => e.email === currentUser?.email)?.name || employees[0]?.name || 'Raj Patel'
+      }));
+    }
+  }, [bookingModalOpen, selectedBookingDate, assets, employees, currentUser]);
 
   // Safe fetch utility
   const safeFetch = async (fetchFn: () => Promise<any>, setter: (val: any) => void, defaultVal: any) => {
@@ -605,6 +656,147 @@ export default function App() {
       fetchData();
     } catch (err: any) {
       alert(err.message || 'Failed to complete booking.');
+    }
+  };
+
+  const downloadBOMPDF = (order: Order) => {
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const primaryColor = [79, 70, 229]; 
+      const secondaryColor = [31, 41, 55]; 
+      const accentColor = [16, 185, 129]; 
+
+      // Header Banner
+      doc.setFillColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      doc.rect(0, 0, 210, 35, 'F');
+
+      // Logo Text
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(20);
+      doc.text('ASSETFLOW ERP', 15, 18);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text('Enterprise Asset & Resource Management', 15, 24);
+
+      // Invoice Tag
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('BILL OF MATERIALS', 140, 18);
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(`Document No: ${order.orderNumber}`, 140, 24);
+
+      // Metadata Panel (Customer details)
+      doc.setFillColor(243, 244, 246);
+      doc.rect(15, 45, 180, 22, 'F');
+
+      doc.setTextColor(100, 116, 139);
+      doc.setFontSize(7);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('CLIENT / COMPANY', 20, 51);
+      doc.text('DATE GENERATED', 85, 51);
+      doc.text('ORDER STATUS', 140, 51);
+
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(9);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(order.customer, 20, 57);
+      doc.text(new Date(order.date).toLocaleDateString('en-IN'), 85, 57);
+      doc.text(order.status.toUpperCase(), 140, 57);
+
+      // Items Table Header
+      let yOffset = 78;
+      doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.rect(15, yOffset, 180, 8, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(8);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('#', 18, yOffset + 5.5);
+      doc.text('Product Item Description', 25, yOffset + 5.5);
+      doc.text('Category', 90, yOffset + 5.5);
+      doc.text('Qty', 130, yOffset + 5.5, { align: 'right' });
+      doc.text('Unit Price', 160, yOffset + 5.5, { align: 'right' });
+      doc.text('Total (INR)', 190, yOffset + 5.5, { align: 'right' });
+
+      // Rows
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(51, 65, 85);
+      yOffset += 8;
+      
+      let total = 0;
+      order.items.forEach((item, index) => {
+        const itemTotal = item.quantity * item.unitPrice;
+        total += itemTotal;
+
+        if (index % 2 === 1) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(15, yOffset, 180, 8, 'F');
+        }
+
+        doc.setDrawColor(241, 245, 249);
+        doc.line(15, yOffset + 8, 195, yOffset + 8);
+
+        doc.text(String(index + 1), 18, yOffset + 5.5);
+        doc.text(item.productName, 25, yOffset + 5.5);
+        doc.text(item.materialCategory, 90, yOffset + 5.5);
+        doc.text(String(item.quantity), 130, yOffset + 5.5, { align: 'right' });
+        doc.text(`Rs. ${item.unitPrice.toLocaleString()}`, 160, yOffset + 5.5, { align: 'right' });
+        doc.text(`Rs. ${itemTotal.toLocaleString()}`, 190, yOffset + 5.5, { align: 'right' });
+
+        yOffset += 8;
+      });
+
+      // Grand Total Block
+      yOffset += 5;
+      doc.setFillColor(243, 244, 246);
+      doc.rect(120, yOffset, 75, 10, 'F');
+
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text('GRAND TOTAL:', 125, yOffset + 6.5);
+      doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
+      doc.text(`Rs. ${total.toLocaleString()}`, 190, yOffset + 6.5, { align: 'right' });
+
+      // Notes (if any)
+      if (order.notes) {
+        yOffset += 15;
+        doc.setTextColor(100, 116, 139);
+        doc.setFontSize(7);
+        doc.text('ORDER NOTES:', 15, yOffset);
+        doc.setTextColor(51, 65, 85);
+        doc.setFontSize(8);
+        doc.setFont('Helvetica', 'oblique');
+        doc.text(order.notes, 15, yOffset + 4);
+      }
+
+      // Footer / Sign-off
+      yOffset = Math.max(yOffset + 30, 245);
+      doc.setDrawColor(203, 213, 225);
+      doc.line(15, yOffset, 65, yOffset);
+      doc.line(145, yOffset, 195, yOffset);
+
+      doc.setTextColor(100, 116, 139);
+      doc.setFontSize(7);
+      doc.setFont('Helvetica', 'normal');
+      doc.text('Authorized Signature', 40, yOffset + 4, { align: 'center' });
+      doc.text('Receiver / Store Keeper', 170, yOffset + 4, { align: 'center' });
+
+      doc.setFontSize(6);
+      doc.text('System Generated Document · Securely authenticated via AssetFlow ERP.', 105, 282, { align: 'center' });
+
+      doc.save(`Invoice-${order.orderNumber}.pdf`);
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      alert("Failed to export PDF invoice.");
     }
   };
 
@@ -1028,14 +1220,22 @@ export default function App() {
                   <div className="premium-glass p-5 rounded-2xl border border-white/5 text-left">
                     <div className="flex justify-between items-center pb-4 border-b border-white/5 mb-4"><h3 className="text-sm font-bold font-mono uppercase tracking-wide">Registered Assets Directory</h3><span className="text-[10px] text-zinc-500 font-mono">Count: {assets.length} items</span></div>
                     <div className="space-y-3 font-mono text-xs">
-                      <div className="grid grid-cols-12 text-[10px] font-bold text-zinc-500 border-b border-white/5 pb-2 px-2"><span className="col-span-2">TAG</span><span className="col-span-3">NAME</span><span className="col-span-3">CATEGORY</span><span className="col-span-2">HOLDER</span><span className="col-span-2 text-right">STATUS</span></div>
+                      <div className="grid grid-cols-12 text-[10px] font-bold text-zinc-500 border-b border-white/5 pb-2 px-2"><span className="col-span-2">TAG</span><span className="col-span-3">NAME</span><span className="col-span-2">CATEGORY</span><span className="col-span-2">HOLDER</span><span className="col-span-2 text-right">STATUS</span><span className="col-span-1 text-right">QR</span></div>
                       {assets.map(a=>(
                         <div key={a.tag} className="grid grid-cols-12 items-center px-2 py-2 hover:bg-white/[0.02] rounded transition text-zinc-300">
                           <span className="col-span-2 font-bold text-white">{a.tag}</span>
                           <div className="col-span-3 flex flex-col"><span className="font-semibold text-zinc-200">{a.name}</span><span className="text-[9px] text-zinc-500">{a.serial}</span></div>
-                          <span className="col-span-3">{a.category}</span>
+                          <span className="col-span-2">{a.category}</span>
                           <span className="col-span-2 text-zinc-400">{a.holder}</span>
                           <span className="col-span-2 text-right"><span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${a.status==='Available'?'bg-emerald-950/60 text-emerald-400 border border-emerald-900/30':a.status==='Allocated'?'bg-brand/10 text-brand border border-brand/20':a.status==='Under Maintenance'?'bg-amber-950/60 text-amber-400 border border-amber-900/30':'bg-zinc-900 text-zinc-500'}`}>{a.status}</span></span>
+                          <div className="col-span-1 text-right">
+                            <button onClick={() => {
+                              setQrModalContent({ title: a.name, subtitle: `Asset Tag: ${a.tag}`, codeValue: a.tag });
+                              setQrModalOpen(true);
+                            }} className="p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-white transition" title="Show QR Code">
+                              <QrCode className="w-3.5 h-3.5 text-brand" />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1048,9 +1248,120 @@ export default function App() {
                 <div className="space-y-6 text-left">
                   {pendingHandover && (<div className="premium-glass p-5 rounded-2xl border border-brand/20 bg-brand/5"><div className="flex items-center gap-2 pb-3 border-b border-brand/10 mb-3 text-brand"><ClipboardCheck className="w-5 h-5 animate-pulse"/><h3 className="text-sm font-bold uppercase tracking-wider font-mono">Digital Handover Sign-off Required</h3></div><p className="text-xs text-zinc-300 leading-relaxed">Allocation for [<strong>{pendingHandover.asset.name}</strong>] to [<strong>{pendingHandover.employee}</strong>] staged. Employee must acknowledge condition [<strong>{pendingHandover.asset.condition}</strong>].</p><div className="flex gap-2.5 mt-4"><button onClick={()=>executeAllocation(pendingHandover.asset.tag,pendingHandover.employee,pendingHandover.returnDate)} className="px-4 py-2 bg-brand hover:bg-brand/90 text-white rounded text-xs font-bold uppercase tracking-wider transition">E-Sign Handover</button><button onClick={()=>setPendingHandover(null)} className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded text-xs font-bold uppercase tracking-wider transition">Cancel</button></div></div>)}
                   {conflictAsset && (<div className="premium-glass p-5 rounded-2xl border border-red-500/20 bg-red-950/5"><div className="flex items-center gap-2 pb-3 border-b border-red-950/30 mb-3 text-red-400"><AlertTriangle className="w-5 h-5"/><h3 className="text-sm font-bold uppercase tracking-wider font-mono">Conflict Alert</h3></div><p className="text-xs text-zinc-300">[<strong>{conflictAsset.name}</strong>] is [{conflictAsset.status}] by [{conflictAsset.holder}].</p><div className="flex flex-col gap-2 mt-4 max-w-md font-mono text-xs"><button onClick={()=>{addLog(conflictForm.employee,'REQUEST_TRANSFER',conflictAsset.tag,`Transfer from ${conflictAsset.holder}`);setConflictAsset(null);alert('Transfer request dispatched.');}} className="text-left p-2.5 rounded bg-zinc-950 border border-zinc-900 hover:border-brand/40 text-brand transition">&gt; Option 1. Dispatch Transfer request</button><button onClick={()=>{const alt=assets.find(a=>a.status==='Available'&&a.category===conflictAsset.category);if(alt){setPendingHandover({asset:alt,employee:conflictForm.employee,returnDate:conflictForm.returnDate});setConflictAsset(null);}else alert('No alternatives found.');}} className="text-left p-2.5 rounded bg-zinc-950 border border-zinc-900 hover:border-brand/40 text-brand transition">&gt; Option 2. Allocate alternative asset</button><button onClick={()=>{addLog(conflictForm.employee,'JOIN_WAITLIST',conflictAsset.tag,`Joined queue`);setConflictAsset(null);alert('Joined waitlist.');}} className="text-left p-2.5 rounded bg-zinc-950 border border-zinc-900 hover:border-brand/40 text-brand transition">&gt; Option 3. Join Waitlist Queue</button></div></div>)}
+                  {/* Calendar Date Picker and Day Switcher Control Panel */}
+                  <div className="premium-glass p-6 rounded-2xl border border-white/5 space-y-4">
+                    <div className="flex flex-wrap justify-between items-center gap-4">
+                      <div>
+                        <h3 className="text-sm font-bold font-mono uppercase tracking-wide flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-brand" />
+                          Shared Resources Booking Calendar
+                        </h3>
+                        <span className="text-[10px] text-zinc-500 font-mono mt-1 block">Click dates to check availability or schedule resource slots</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 font-mono">
+                        {/* Day increment/decrement */}
+                        <button onClick={() => {
+                          const d = new Date(selectedBookingDate);
+                          d.setDate(d.getDate() - 1);
+                          setSelectedBookingDate(d.toISOString().split('T')[0]);
+                        }} className="p-2 bg-zinc-900 border border-zinc-800 rounded-lg hover:border-zinc-700 hover:text-white text-zinc-400 transition text-xs">&lt;</button>
+                        
+                        <input type="date" value={selectedBookingDate} onChange={e => setSelectedBookingDate(e.target.value)} className="px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white text-xs font-mono outline-none focus:border-brand"/>
+                        
+                        <button onClick={() => {
+                          const d = new Date(selectedBookingDate);
+                          d.setDate(d.getDate() + 1);
+                          setSelectedBookingDate(d.toISOString().split('T')[0]);
+                        }} className="p-2 bg-zinc-900 border border-zinc-800 rounded-lg hover:border-zinc-700 hover:text-white text-zinc-400 transition text-xs">&gt;</button>
+                      </div>
+                    </div>
+
+                    {/* Horizontal Date Slider Grid */}
+                    <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none pt-1">
+                      {getWeekDays().map(day => {
+                        const isActive = day.dateStr === selectedBookingDate;
+                        return (
+                          <button key={day.dateStr} onClick={() => setSelectedBookingDate(day.dateStr)}
+                            className={`flex flex-col items-center justify-center p-3 rounded-xl border font-mono min-w-[70px] transition-all duration-300 ${isActive ? 'bg-brand/20 border-brand text-white shadow shadow-brand/25 scale-[1.03]' : 'bg-zinc-950 border-zinc-900 text-zinc-400 hover:border-zinc-800 hover:text-white'}`}>
+                            <span className="text-[9px] uppercase font-bold tracking-wider">{day.name}</span>
+                            <span className="text-sm font-black mt-1">{day.num}</span>
+                            <span className="text-[8px] uppercase text-zinc-500 mt-0.5">{day.month}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="premium-glass p-5 rounded-2xl border border-white/5"><h3 className="text-xs font-bold font-mono uppercase tracking-wide pb-3 border-b border-white/5 mb-3">Active Reservations</h3><div className="space-y-2 font-mono text-[11px]">{bookings.map(b=>(<div key={b.id} className="p-3 bg-zinc-950 rounded-lg border border-zinc-900 flex justify-between items-center"><div className="flex flex-col gap-0.5"><span className="text-zinc-200 font-bold uppercase">{b.resource}</span><span className="text-zinc-500">By: {b.user}</span></div><div className="text-right"><span className="block text-brand">{b.start} - {b.end}</span><span className="text-[9px] px-1.5 py-0.5 bg-indigo-950 text-indigo-400 rounded">+15m Buffer</span></div></div>))}</div></div>
-                    <div className="premium-glass p-5 rounded-2xl border border-white/5"><h3 className="text-xs font-bold font-mono uppercase tracking-wide pb-3 border-b border-white/5 mb-3">Buffer Policies</h3><ul className="space-y-3 text-zinc-400 text-xs"><li><strong className="text-zinc-200 uppercase font-mono text-[9px] tracking-wider block">Transition Buffer</strong>15-minute cleaning slot after each shared resource booking.</li><li><strong className="text-zinc-200 uppercase font-mono text-[9px] tracking-wider block">Category Grouping</strong>Book by Group Category rather than single units.</li></ul></div>
+                    {/* Left Column: Filtered active bookings for selected date */}
+                    <div className="premium-glass p-5 rounded-2xl border border-white/5 space-y-4">
+                      <div className="flex justify-between items-center pb-3 border-b border-zinc-900 mb-2">
+                        <h3 className="text-xs font-bold font-mono uppercase tracking-wide">
+                          Reservations on: <span className="text-brand font-semibold">{new Date(selectedBookingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                        </h3>
+                        <button onClick={() => setBookingModalOpen(true)} className="px-2.5 py-1 bg-white hover:bg-zinc-200 text-black text-[9px] font-bold uppercase tracking-wider font-mono rounded">
+                          Book Slot
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-2 font-mono text-[11px] max-h-[300px] overflow-y-auto pr-1">
+                        {(() => {
+                          const list = bookings.filter(b => b.date === selectedBookingDate || b.date.startsWith(selectedBookingDate));
+                          if (list.length === 0) {
+                            return (
+                              <div className="text-center py-10 border border-dashed border-zinc-900 rounded-xl bg-zinc-950/20 text-zinc-600">
+                                No reservations scheduled for this date.
+                              </div>
+                            );
+                          }
+                          return list.map(b => (
+                            <div key={b.id} className="p-3 bg-zinc-950 rounded-lg border border-zinc-900 flex justify-between items-center">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-zinc-200 font-bold uppercase">{b.resource}</span>
+                                <span className="text-zinc-500">By: {b.user}</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="block text-brand">{b.start} - {b.end}</span>
+                                <span className="text-[9px] px-1.5 py-0.5 bg-indigo-950 text-indigo-400 rounded">+15m Buffer</span>
+                              </div>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Right Column: Shared Resources List & Buffer policies */}
+                    <div className="premium-glass p-5 rounded-2xl border border-white/5 space-y-5">
+                      <div>
+                        <h3 className="text-xs font-bold font-mono uppercase tracking-wide pb-3 border-b border-zinc-900 mb-3">Shared Resource Directory</h3>
+                        <div className="grid grid-cols-1 gap-2 font-mono text-[10px]">
+                          {assets.filter(a => a.shared).map(a => (
+                            <div key={a.tag} className="p-2.5 bg-zinc-950 rounded-lg border border-zinc-900 flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                                <span className="text-zinc-200 font-bold">{a.name}</span>
+                              </div>
+                              <span className="text-zinc-500">{a.location}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
+                        <h3 className="text-xs font-bold font-mono uppercase tracking-wide pb-3 border-b border-zinc-900 mb-3">Buffer Policies</h3>
+                        <ul className="space-y-3 text-zinc-400 text-xs">
+                          <li>
+                            <strong className="text-zinc-200 uppercase font-mono text-[9px] tracking-wider block">Transition Buffer</strong>
+                            15-minute cleaning slot after each shared resource booking.
+                          </li>
+                          <li>
+                            <strong className="text-zinc-200 uppercase font-mono text-[9px] tracking-wider block">Category Grouping</strong>
+                            Book by Group Category rather than single units.
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1159,6 +1470,14 @@ export default function App() {
                                   <div className="flex items-center gap-2 flex-wrap"><span className="text-sm font-bold text-white font-mono">{product.name}</span><span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${cfg.bg} ${cfg.color} ${cfg.border}`}>{product.category}</span></div>
                                   <div className="flex items-center gap-3 mt-0.5"><span className="text-[10px] text-zinc-500 font-mono">SKU: {product.sku}</span>{minPrice>0&&<span className="text-[10px] text-emerald-400 font-mono font-bold">From ₹{minPrice.toLocaleString()}</span>}<span className="text-[10px] text-purple-400 font-mono">{vendorList.length} vendor{vendorList.length!==1?'s':''}</span></div>
                                 </div>
+                                <div className="flex items-center gap-2" onClick={(e)=>e.stopPropagation()}>
+                                  <button onClick={() => {
+                                    setQrModalContent({ title: product.name, subtitle: `Product SKU: ${product.sku}`, codeValue: product.sku });
+                                    setQrModalOpen(true);
+                                  }} className="p-1.5 rounded hover:bg-white/10 text-zinc-500 hover:text-white transition" title="Show QR Code">
+                                    <QrCode className="w-3.5 h-3.5 text-brand" />
+                                  </button>
+                                </div>
                                 <ChevronDown className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform duration-200 ${isExpanded?'rotate-180':''}`}/>
                               </button>
                               {isExpanded && (
@@ -1207,7 +1526,8 @@ export default function App() {
                       <div className="p-5 border-b border-purple-900/20 flex items-center justify-between no-print">
                         <div className="flex items-center gap-3"><FileText className="w-4 h-4 text-purple-400"/><span className="text-xs font-bold font-mono uppercase tracking-wider text-purple-300">BOM — {activeBOM.orderNumber}</span></div>
                         <div className="flex items-center gap-2">
-                          <button onClick={()=>window.print()} className="flex items-center gap-2 px-4 py-2 bg-white text-black text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-zinc-100 transition"><Printer className="w-3.5 h-3.5"/>Print BOM</button>
+                          <button onClick={()=>downloadBOMPDF(activeBOM)} className="flex items-center gap-1.5 px-4 py-2 bg-brand text-white text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-brand/90 transition shadow shadow-brand/20"><FileText className="w-3.5 h-3.5"/>Download PDF Bill</button>
+                          <button onClick={()=>window.print()} className="flex items-center gap-1.5 px-4 py-2 bg-zinc-800 text-zinc-300 text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-zinc-700 transition"><Printer className="w-3.5 h-3.5"/>Print</button>
                           <button onClick={()=>setActiveBOM(null)} className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-white/5 transition"><X className="w-4 h-4"/></button>
                         </div>
                       </div>
@@ -1560,6 +1880,65 @@ export default function App() {
 
           {/* Add Item Master Modal */}
           {itemMasterModalOpen&&(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"><div className="premium-glass p-6 rounded-2xl border border-white/10 w-full max-w-lg text-left font-mono max-h-[90vh] overflow-y-auto"><div className="flex justify-between items-center pb-3 border-b border-white/5 mb-4"><h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2"><Layers className="w-4 h-4 text-teal-400"/>Add Item Master Record</h3><button onClick={()=>setItemMasterModalOpen(false)}><X className="w-4 h-4"/></button></div><form onSubmit={handleAddItemMaster} className="space-y-4 text-xs"><div className="col-span-2 space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Material Name *</label><input type="text" required value={newItem.name} onChange={e=>setNewItem(p=>({...p,name:e.target.value}))} className="w-full p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-teal-500" placeholder="e.g. Steel Rod 12mm"/></div><div className="grid grid-cols-2 gap-3"><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">SKU *</label><input type="text" required value={newItem.sku} onChange={e=>setNewItem(p=>({...p,sku:e.target.value}))} className="w-full p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-teal-500" placeholder="SR-12MM-001"/></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Category *</label><select value={newItem.materialCategory} onChange={e=>setNewItem(p=>({...p,materialCategory:e.target.value as MaterialCategory}))} className="w-full p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-teal-500"><option value="Raw Material">🔵 Raw Material</option><option value="Semi-Finished Material">🟡 Semi-Finished Material</option><option value="Finished Material">🟢 Finished Material</option></select></div></div><div className={`p-3 rounded-lg border text-[10px] leading-relaxed ${MATERIAL_CATEGORY_CONFIG[newItem.materialCategory].bg} ${MATERIAL_CATEGORY_CONFIG[newItem.materialCategory].border} ${MATERIAL_CATEGORY_CONFIG[newItem.materialCategory].color}`}>{MATERIAL_CATEGORY_CONFIG[newItem.materialCategory].icon} {MATERIAL_CATEGORY_CONFIG[newItem.materialCategory].description} <span className="text-zinc-500 ml-1">(Low stock &lt; {LOW_STOCK_THRESHOLDS[newItem.materialCategory].toLocaleString()} units)</span></div><div className="grid grid-cols-2 gap-3"><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Quantity *</label><input type="number" required min={0} value={newItem.quantity||''} onChange={e=>setNewItem(p=>({...p,quantity:Number(e.target.value)}))} className="w-full p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-teal-500" placeholder="500"/></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Rate (₹/unit) *</label><input type="number" required min={0} step="0.01" value={newItem.rate||''} onChange={e=>setNewItem(p=>({...p,rate:Number(e.target.value)}))} className="w-full p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-teal-500" placeholder="80.00"/></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Material Location *</label><input type="text" required value={newItem.materialLocation} onChange={e=>setNewItem(p=>({...p,materialLocation:e.target.value}))} className="w-full p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-teal-500" placeholder="Warehouse A - Rack 3"/></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Company Name *</label><input type="text" required value={newItem.companyName} onChange={e=>setNewItem(p=>({...p,companyName:e.target.value}))} className="w-full p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-teal-500" placeholder="Vendor or In-House"/></div></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Description</label><textarea rows={2} value={newItem.description} onChange={e=>setNewItem(p=>({...p,description:e.target.value}))} className="w-full p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-teal-500 resize-none" placeholder="Additional details..."/></div><button type="submit" className="w-full py-2.5 bg-teal-700 hover:bg-teal-600 text-white font-bold uppercase tracking-wider rounded-lg transition">Add to Item Master</button></form></div></div>)}
+
+          {/* QR Modal */}
+          {qrModalOpen && qrModalContent && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+              <div className="premium-glass p-6 rounded-2xl border border-white/10 w-full max-w-sm text-center font-mono">
+                <div className="flex justify-between items-center pb-2 border-b border-white/5 mb-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-brand flex items-center gap-1.5"><QrCode className="w-4 h-4"/>Generated QR Tag</h3>
+                  <button onClick={() => setQrModalOpen(false)}><X className="w-4 h-4"/></button>
+                </div>
+                <span className="text-[10px] text-zinc-500 uppercase tracking-widest block font-bold">{qrModalContent.subtitle}</span>
+                <h4 className="text-white font-bold text-sm mt-1 mb-4">{qrModalContent.title}</h4>
+                
+                {/* White background card containing the QR code to ensure clear contrast */}
+                <div className="p-4 bg-white rounded-xl inline-block shadow-lg mb-4">
+                  <canvas ref={qrCanvasRef} className="w-[180px] h-[180px] block"></canvas>
+                </div>
+                
+                <div className="text-[10px] text-zinc-400 select-all mb-4 px-3 py-1.5 bg-zinc-950 rounded border border-zinc-900 break-all">
+                  Raw Code: {qrModalContent.codeValue}
+                </div>
+                
+                <div className="flex gap-2 justify-center">
+                  <button onClick={() => {
+                    const printWindow = window.open('', '_blank');
+                    if (printWindow) {
+                      printWindow.document.write(`
+                        <html>
+                          <head>
+                            <title>Print Label - ${qrModalContent.title}</title>
+                            <style>
+                              body { display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: monospace; height: 100vh; margin: 0; }
+                              .container { text-align: center; border: 2px solid black; padding: 20px; border-radius: 10px; margin: auto; }
+                              img { width: 250px; height: 250px; }
+                              h1 { font-size: 20px; margin: 10px 0 5px 0; }
+                              p { font-size: 14px; margin: 5px 0; color: #555; }
+                            </style>
+                          </head>
+                          <body>
+                            <div class="container">
+                              <img src="${qrCanvasRef.current?.toDataURL()}" />
+                              <h1>${qrModalContent.title}</h1>
+                              <p>${qrModalContent.subtitle}</p>
+                              <p>CODE: ${qrModalContent.codeValue}</p>
+                            </div>
+                            <script>
+                              window.onload = function() { window.print(); window.close(); }
+                            </script>
+                          </body>
+                        </html>
+                      `);
+                      printWindow.document.close();
+                    }
+                  }} className="px-4 py-2 bg-white text-black hover:bg-zinc-200 text-xs font-bold uppercase tracking-wider rounded-lg transition flex items-center gap-1.5 justify-center w-full">
+                    <Printer className="w-3.5 h-3.5"/>Print QR Label
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
         </>
       )}
