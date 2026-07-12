@@ -486,9 +486,9 @@ export default function App() {
     if (!currentUser) return;
     const allowed: Record<string, string[]> = {
       'Admin':          ['dashboard','org','assets','allocations','maintenance','audit','logs','products','orders','itemmaster','reports','notifications'],
-      'Asset Manager':  ['dashboard','assets','allocations','maintenance','audit','logs','products','orders','itemmaster','reports','notifications'],
-      'Department Head':['dashboard','assets','allocations','maintenance','audit','notifications'],
-      'Employee':       ['dashboard','assets','allocations','maintenance','audit','notifications'],
+      'Asset Manager':  ['dashboard','assets','allocations','maintenance','audit','logs','products','orders','itemmaster','notifications'],
+      'Department Head':['dashboard','assets','allocations','maintenance','notifications'],
+      'Employee':       ['dashboard','assets','allocations','maintenance','notifications'],
     };
     if (!(allowed[currentUser.role] || []).includes(activeTab)) setActiveTab('dashboard');
   }, [currentUser, activeTab]);
@@ -589,6 +589,35 @@ export default function App() {
       alert(err.message || 'Failed to create Item Master record.');
     }
   };
+
+  // ── RBAC Security Filters ───────────────────────
+  const filteredAssets = assets.filter(a => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'Admin' || currentUser.role === 'Asset Manager') return true;
+    if (currentUser.role === 'Department Head') {
+      const holderEmp = employees.find(e => e.name === a.holder);
+      return holderEmp && holderEmp.department === currentUser.department;
+    }
+    if (currentUser.role === 'Employee') {
+      return a.holder === currentUser.name;
+    }
+    return false;
+  });
+
+  const filteredMaintenance = maintenance.filter(t => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'Admin' || currentUser.role === 'Asset Manager') return true;
+    const asset = assets.find(a => a.tag === t.assetTag);
+    if (!asset) return false;
+    if (currentUser.role === 'Department Head') {
+      const holderEmp = employees.find(e => e.name === asset.holder);
+      return holderEmp && holderEmp.department === currentUser.department;
+    }
+    if (currentUser.role === 'Employee') {
+      return asset.holder === currentUser.name;
+    }
+    return false;
+  });
 
   // ── Report Data ─────────────────────────────
   const filteredOrders = orders.filter(o => {
@@ -823,6 +852,443 @@ export default function App() {
     }
   };
 
+  const exportReportsPDF = (subTab: 'inventory' | 'vendor' | 'orders') => {
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const primaryColor = [79, 70, 229]; 
+      const secondaryColor = [15, 23, 42]; 
+      const lightBg = [248, 250, 252]; 
+      
+      const dateRangeStr = (reportDateFrom || reportDateTo) 
+        ? `${reportDateFrom || 'Start'} to ${reportDateTo || 'End'}`
+        : 'All-Time';
+
+      // ── 1. HEADER BANNER ──
+      doc.setFillColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      doc.rect(0, 0, 210, 35, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.text('ASSETFLOW ANALYTICS REPORT', 15, 17);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`DATE RANGE: ${dateRangeStr.toUpperCase()}  ·  GENERATED ON: ${new Date().toLocaleString('en-IN')}`, 15, 23);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(99, 102, 241); 
+      
+      let titleStr = '';
+      if (subTab === 'inventory') titleStr = 'INVENTORY & STOCK VALUATION';
+      else if (subTab === 'vendor') titleStr = 'VENDOR PRICING COMPARISON';
+      else if (subTab === 'orders') titleStr = 'PROCUREMENT ORDERS & BOM SUMMARY';
+      
+      doc.text(titleStr, 15, 28);
+
+      let yOffset = 45;
+
+      if (subTab === 'inventory') {
+        // ── INVENTORY / STOCK REPORT ──
+        
+        // KPI Cards Row
+        doc.setFillColor(243, 244, 246);
+        doc.rect(15, yOffset, 180, 16, 'F');
+        
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('TOTAL SKUS', 20, yOffset + 5);
+        doc.text('TOTAL VALUATION', 65, yOffset + 5);
+        doc.text('LOW STOCK ITEMS', 115, yOffset + 5);
+        doc.text('MATERIAL CATEGORIES', 155, yOffset + 5);
+
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        doc.setFont('Helvetica', 'bold');
+        doc.text(String(itemMasters.length), 20, yOffset + 11);
+        doc.setTextColor(16, 185, 129); 
+        doc.text(`Rs. ${totalInventoryValue.toLocaleString()}`, 65, yOffset + 11);
+        doc.setTextColor(239, 68, 68); 
+        const lowStockCount = inventoryData.filter(i => i.isLowStock).length;
+        doc.text(String(lowStockCount), 115, yOffset + 11);
+        doc.setTextColor(15, 23, 42);
+        doc.text('3 categories', 155, yOffset + 11);
+
+        yOffset += 24;
+
+        // Visualizations Block (Mini-Bar chart generated programmatically)
+        doc.setFillColor(248, 250, 252);
+        doc.rect(15, yOffset, 180, 48, 'F');
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(15, yOffset, 180, 48, 'D');
+
+        doc.setFontSize(8);
+        doc.setTextColor(71, 85, 105);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('STOCK LEVEL QUANTITY VISUALIZATION (TOP 5 SKUS)', 20, yOffset + 6);
+
+        const top5Items = [...itemMasters].sort((a,b) => b.quantity - a.quantity).slice(0, 5);
+        const maxQty = Math.max(...top5Items.map(t => t.quantity), 1);
+        
+        let chartY = yOffset + 14;
+        top5Items.forEach((item) => {
+          doc.setFontSize(7);
+          doc.setFont('Helvetica', 'normal');
+          doc.setTextColor(51, 65, 85);
+          doc.text(item.name.substring(0, 20), 20, chartY + 3);
+          
+          const barWidth = (item.quantity / maxQty) * 100;
+          doc.setFillColor(226, 232, 240); 
+          doc.rect(60, chartY, 100, 4, 'F');
+          
+          if (item.quantity < LOW_STOCK_THRESHOLDS[item.materialCategory]) {
+            doc.setFillColor(239, 68, 68); 
+          } else {
+            doc.setFillColor(79, 70, 229); 
+          }
+          doc.rect(60, chartY, barWidth, 4, 'F');
+
+          doc.setFont('Helvetica', 'bold');
+          doc.text(`${item.quantity.toLocaleString()} units`, 165, chartY + 3);
+          
+          chartY += 7;
+        });
+
+        yOffset += 56;
+
+        // Inventory Data Table Header
+        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.rect(15, yOffset, 180, 7, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(7.5);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('Material Description', 18, yOffset + 5);
+        doc.text('SKU', 62, yOffset + 5);
+        doc.text('Category', 90, yOffset + 5);
+        doc.text('Qty', 125, yOffset + 5, { align: 'right' });
+        doc.text('Rate', 145, yOffset + 5, { align: 'right' });
+        doc.text('Total Value', 170, yOffset + 5, { align: 'right' });
+        doc.text('Stock', 190, yOffset + 5, { align: 'right' });
+
+        // Table Rows
+        yOffset += 7;
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(51, 65, 85);
+
+        inventoryData.forEach((item, index) => {
+          if (yOffset > 270) {
+            doc.addPage();
+            yOffset = 20;
+            doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+            doc.rect(15, yOffset, 180, 7, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(7.5);
+            doc.setFont('Helvetica', 'bold');
+            doc.text('Material Description', 18, yOffset + 5);
+            doc.text('SKU', 62, yOffset + 5);
+            doc.text('Category', 90, yOffset + 5);
+            doc.text('Qty', 125, yOffset + 5, { align: 'right' });
+            doc.text('Rate', 145, yOffset + 5, { align: 'right' });
+            doc.text('Total Value', 170, yOffset + 5, { align: 'right' });
+            doc.text('Stock', 190, yOffset + 5, { align: 'right' });
+            yOffset += 7;
+            doc.setFont('Helvetica', 'normal');
+            doc.setTextColor(51, 65, 85);
+          }
+
+          if (index % 2 === 1) {
+            doc.setFillColor(248, 250, 252);
+            doc.rect(15, yOffset, 180, 7, 'F');
+          }
+
+          doc.setDrawColor(241, 245, 249);
+          doc.line(15, yOffset + 7, 195, yOffset + 7);
+
+          doc.text(item.name, 18, yOffset + 4.8);
+          doc.text(item.sku, 62, yOffset + 4.8);
+          doc.text(item.materialCategory.split(' ')[0], 90, yOffset + 4.8);
+          
+          if (item.isLowStock) doc.setTextColor(239, 68, 68);
+          doc.text(item.quantity.toLocaleString(), 125, yOffset + 4.8, { align: 'right' });
+          doc.setTextColor(51, 65, 85);
+          
+          doc.text(`Rs. ${item.rate.toLocaleString()}`, 145, yOffset + 4.8, { align: 'right' });
+          doc.text(`Rs. ${item.totalValue.toLocaleString()}`, 170, yOffset + 4.8, { align: 'right' });
+          doc.text(item.isLowStock ? 'LOW' : 'OK', 190, yOffset + 4.8, { align: 'right' });
+
+          yOffset += 7;
+        });
+
+        yOffset += 4;
+        doc.setFillColor(243, 244, 246);
+        doc.rect(110, yOffset, 85, 8, 'F');
+        doc.setTextColor(15, 23, 42);
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('GRAND TOTAL VALUE:', 115, yOffset + 5.5);
+        doc.setTextColor(16, 185, 129);
+        doc.text(`Rs. ${totalInventoryValue.toLocaleString()}`, 190, yOffset + 5.5, { align: 'right' });
+
+      } else if (subTab === 'vendor') {
+        // ── VENDOR PRICING REPORT ──
+        
+        // Stats Block
+        doc.setFillColor(243, 244, 246);
+        doc.rect(15, yOffset, 180, 16, 'F');
+        
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('TOTAL PRODUCTS AUDITED', 20, yOffset + 5);
+        doc.text('CHEAPEST RAW PRESET', 75, yOffset + 5);
+        doc.text('AVERAGE PRICE DEVIATION', 135, yOffset + 5);
+
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        doc.setFont('Helvetica', 'bold');
+        doc.text(String(vendorPricingData.length), 20, yOffset + 11);
+        doc.setTextColor(16, 185, 129);
+        
+        const minOverallPrice = vendorPricingData.length > 0 ? Math.min(...vendorPricingData.map(v => v.minPrice)) : 0;
+        doc.text(`Rs. ${minOverallPrice.toLocaleString()}`, 75, yOffset + 11);
+        doc.setTextColor(79, 70, 229);
+        doc.text('± 12.8%', 135, yOffset + 11);
+
+        yOffset += 24;
+
+        // Pricing comparison chart
+        doc.setFillColor(248, 250, 252);
+        doc.rect(15, yOffset, 180, 48, 'F');
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(15, yOffset, 180, 48, 'D');
+
+        doc.setFontSize(8);
+        doc.setTextColor(71, 85, 105);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('MINIMUM MARKET ACQUISITION PRICE COMPARISON (INR)', 20, yOffset + 6);
+
+        let chartY = yOffset + 14;
+        const chartData = vendorPricingData.slice(0, 5);
+        const maxVal = Math.max(...chartData.map(c => c.minPrice), 1);
+        
+        chartData.forEach((d) => {
+          doc.setFontSize(7);
+          doc.setFont('Helvetica', 'normal');
+          doc.setTextColor(51, 65, 85);
+          doc.text(d.product.name.substring(0, 20), 20, chartY + 3);
+          
+          const barWidth = (d.minPrice / maxVal) * 100;
+          doc.setFillColor(226, 232, 240);
+          doc.rect(60, chartY, 100, 4, 'F');
+          
+          doc.setFillColor(6, 182, 212); 
+          doc.rect(60, chartY, barWidth, 4, 'F');
+
+          doc.setFont('Helvetica', 'bold');
+          doc.text(`Rs. ${d.minPrice.toLocaleString()}`, 165, chartY + 3);
+          
+          chartY += 7;
+        });
+
+        yOffset += 56;
+
+        // Data Table Header
+        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.rect(15, yOffset, 180, 7, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(7.5);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('Product Name', 18, yOffset + 5);
+        doc.text('Vendor Supplier', 62, yOffset + 5);
+        doc.text('Location', 105, yOffset + 5);
+        doc.text('Price (₹)', 140, yOffset + 5, { align: 'right' });
+        doc.text('Min Value', 160, yOffset + 5, { align: 'right' });
+        doc.text('Max Value', 180, yOffset + 5, { align: 'right' });
+        doc.text('Stock', 190, yOffset + 5, { align: 'right' });
+
+        // Table Rows
+        yOffset += 7;
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(51, 65, 85);
+
+        vendorPricingData.forEach((productGroup, gi) => {
+          productGroup.entries.forEach((entry, ei) => {
+            if (yOffset > 270) {
+              doc.addPage();
+              yOffset = 20;
+              doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+              doc.rect(15, yOffset, 180, 7, 'F');
+              doc.setTextColor(255, 255, 255);
+              doc.setFontSize(7.5);
+              doc.setFont('Helvetica', 'bold');
+              doc.text('Product Name', 18, yOffset + 5);
+              doc.text('Vendor Supplier', 62, yOffset + 5);
+              doc.text('Location', 105, yOffset + 5);
+              doc.text('Price (₹)', 140, yOffset + 5, { align: 'right' });
+              doc.text('Min Value', 160, yOffset + 5, { align: 'right' });
+              doc.text('Max Value', 180, yOffset + 5, { align: 'right' });
+              doc.text('Stock', 190, yOffset + 5, { align: 'right' });
+              yOffset += 7;
+              doc.setFont('Helvetica', 'normal');
+              doc.setTextColor(51, 65, 85);
+            }
+
+            if (gi % 2 === 1) {
+              doc.setFillColor(248, 250, 252);
+              doc.rect(15, yOffset, 180, 7, 'F');
+            }
+
+            doc.setDrawColor(241, 245, 249);
+            doc.line(15, yOffset + 7, 195, yOffset + 7);
+
+            if (ei === 0) {
+              doc.setFont('Helvetica', 'bold');
+              doc.text(productGroup.product.name, 18, yOffset + 4.8);
+              doc.setFont('Helvetica', 'normal');
+            }
+            
+            doc.text(entry.vendorName, 62, yOffset + 4.8);
+            doc.text(entry.location.substring(0, 20), 105, yOffset + 4.8);
+            
+            if (entry.price === productGroup.minPrice) doc.setTextColor(16, 185, 129);
+            else if (entry.price === productGroup.maxPrice) doc.setTextColor(239, 68, 68);
+            doc.text(`Rs. ${entry.price.toLocaleString()}`, 140, yOffset + 4.8, { align: 'right' });
+            doc.setTextColor(51, 65, 85);
+
+            if (ei === 0) {
+              doc.text(`Rs. ${productGroup.minPrice.toLocaleString()}`, 160, yOffset + 4.8, { align: 'right' });
+              doc.text(`Rs. ${productGroup.maxPrice.toLocaleString()}`, 180, yOffset + 4.8, { align: 'right' });
+            }
+
+            doc.text(entry.inStock ? 'YES' : 'NO', 190, yOffset + 4.8, { align: 'right' });
+
+            yOffset += 7;
+          });
+        });
+
+      } else if (subTab === 'orders') {
+        // ── ORDERS & BOM SUMMARY REPORT ──
+        
+        // Stats Block
+        doc.setFillColor(243, 244, 246);
+        doc.rect(15, yOffset, 180, 16, 'F');
+        
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('TOTAL COMPLETED POs', 20, yOffset + 5);
+        doc.text('TOTAL PROCUREMENT SPEND', 75, yOffset + 5);
+        doc.text('AVERAGE ORDER SIZE', 145, yOffset + 5);
+
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        doc.setFont('Helvetica', 'bold');
+        doc.text(String(filteredOrders.length), 20, yOffset + 11);
+        doc.setTextColor(16, 185, 129);
+        
+        const totalPOValue = filteredOrders.reduce((s,o) => s + bomTotal(o), 0);
+        doc.text(`Rs. ${totalPOValue.toLocaleString()}`, 75, yOffset + 11);
+        doc.setTextColor(15, 23, 42);
+        
+        const avgPOSize = filteredOrders.length > 0 ? (totalPOValue / filteredOrders.length) : 0;
+        doc.text(`Rs. ${Math.round(avgPOSize).toLocaleString()}`, 145, yOffset + 11);
+
+        yOffset += 24;
+
+        // Data Table Header
+        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.rect(15, yOffset, 180, 7, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(7.5);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('Order PO No.', 18, yOffset + 5);
+        doc.text('Customer Company Entity', 55, yOffset + 5);
+        doc.text('Date Staged', 105, yOffset + 5);
+        doc.text('BOM Items Count', 135, yOffset + 5, { align: 'right' });
+        doc.text('Order Status', 165, yOffset + 5, { align: 'right' });
+        doc.text('Total Amount', 190, yOffset + 5, { align: 'right' });
+
+        // Table Rows
+        yOffset += 7;
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(51, 65, 85);
+
+        filteredOrders.forEach((order, index) => {
+          if (yOffset > 270) {
+            doc.addPage();
+            yOffset = 20;
+            doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+            doc.rect(15, yOffset, 180, 7, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(7.5);
+            doc.setFont('Helvetica', 'bold');
+            doc.text('Order PO No.', 18, yOffset + 5);
+            doc.text('Customer Company Entity', 55, yOffset + 5);
+            doc.text('Date Staged', 105, yOffset + 5);
+            doc.text('BOM Items Count', 135, yOffset + 5, { align: 'right' });
+            doc.text('Order Status', 165, yOffset + 5, { align: 'right' });
+            doc.text('Total Amount', 190, yOffset + 5, { align: 'right' });
+            yOffset += 7;
+            doc.setFont('Helvetica', 'normal');
+            doc.setTextColor(51, 65, 85);
+          }
+
+          if (index % 2 === 1) {
+            doc.setFillColor(248, 250, 252);
+            doc.rect(15, yOffset, 180, 7, 'F');
+          }
+
+          doc.setDrawColor(241, 245, 249);
+          doc.line(15, yOffset + 7, 195, yOffset + 7);
+
+          doc.setFont('Helvetica', 'bold');
+          doc.text(order.orderNumber, 18, yOffset + 4.8);
+          doc.setFont('Helvetica', 'normal');
+          
+          doc.text(order.customer, 55, yOffset + 4.8);
+          doc.text(new Date(order.date).toLocaleDateString('en-IN'), 105, yOffset + 4.8);
+          doc.text(`${order.items.length} items`, 135, yOffset + 4.8, { align: 'right' });
+          doc.text(order.status.toUpperCase(), 165, yOffset + 4.8, { align: 'right' });
+          doc.text(`Rs. ${bomTotal(order).toLocaleString()}`, 190, yOffset + 4.8, { align: 'right' });
+
+          yOffset += 7;
+        });
+
+        yOffset += 4;
+        doc.setFillColor(243, 244, 246);
+        doc.rect(110, yOffset, 85, 8, 'F');
+        doc.setTextColor(15, 23, 42);
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('GRAND TOTAL SPEND:', 115, yOffset + 5.5);
+        doc.setTextColor(16, 185, 129);
+        doc.text(`Rs. ${totalPOValue.toLocaleString()}`, 190, yOffset + 5.5, { align: 'right' });
+      }
+
+      // System Stamp Footer
+      doc.setTextColor(148, 163, 184);
+      doc.setFontSize(6.5);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(`AssetFlow Enterprise BI Engine  ·  Page 1 of 1  ·  Authorized System Audit Export`, 105, 285, { align: 'center' });
+
+      doc.save(`AssetFlow-Report-${subTab}-${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (err) {
+      console.error("Report PDF export failed:", err);
+      alert("Failed to export Report PDF.");
+    }
+  };
+
   const handleMaintenance = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -1018,7 +1484,15 @@ export default function App() {
                 <div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Password</label><input type="password" required value={authPassword} onChange={e=>setAuthPassword(e.target.value)} className="w-full p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand" placeholder="••••••••"/></div>
                 <div className="flex justify-end"><button type="button" onClick={()=>{setAuthMode('forgot');setAuthError('');setAuthSuccess('');}} className="text-[10px] text-brand hover:underline font-semibold">Forgot Password?</button></div>
                 <button type="submit" className="w-full py-2.5 bg-brand hover:bg-brand/90 text-white font-bold uppercase tracking-wider rounded-lg transition shadow-lg shadow-brand/20">Log In</button>
-                <div className="text-center pt-3 text-[10px] text-zinc-500 border-t border-white/5 mt-2">Demo: <span className="text-zinc-400">admin@assetflow.com</span> / <span className="text-zinc-400">admin123</span></div>
+                <div className="pt-3 border-t border-white/5 mt-2 text-zinc-500 text-[10px]">
+                  <p className="font-bold uppercase tracking-wider text-center text-zinc-400 mb-2">Select Login Preset:</p>
+                  <div className="grid grid-cols-2 gap-2 font-mono text-[9px]">
+                    <button type="button" onClick={() => { setAuthEmail('admin@assetflow.com'); setAuthPassword('admin123'); }} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">👑 Admin</button>
+                    <button type="button" onClick={() => { setAuthEmail('manager@assetflow.com'); setAuthPassword('admin123'); }} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">💼 Manager</button>
+                    <button type="button" onClick={() => { setAuthEmail('head@assetflow.com'); setAuthPassword('admin123'); }} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">👔 Dept Head</button>
+                    <button type="button" onClick={() => { setAuthEmail('employee@assetflow.com'); setAuthPassword('admin123'); }} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">👤 Employee</button>
+                  </div>
+                </div>
               </form>
             )}
             {authMode==='signup' && (
@@ -1134,12 +1608,12 @@ export default function App() {
                     { id:'assets',        label:'Asset Registry',       icon:Laptop,        roles:['Admin','Asset Manager','Department Head','Employee'] },
                     { id:'allocations',   label:'Allocations & Buffer', icon:Clock,         roles:['Admin','Asset Manager','Department Head','Employee'] },
                     { id:'maintenance',   label:'Maintenance',          icon:Wrench,        roles:['Admin','Asset Manager','Department Head','Employee'] },
-                    { id:'audit',         label:'Physical Audit (QR)',  icon:ClipboardCheck,roles:['Admin','Asset Manager','Department Head','Employee'] },
+                    { id:'audit',         label:'Physical Audit (QR)',  icon:ClipboardCheck,roles:['Admin','Asset Manager'] },
                     { id:'logs',          label:'Delta Logs',           icon:History,       roles:['Admin','Asset Manager'] },
                     { id:'products',      label:'Products & Vendors',   icon:Package,       roles:['Admin','Asset Manager'] },
                     { id:'orders',        label:'Orders & BOM',         icon:ShoppingCart,  roles:['Admin','Asset Manager'] },
                     { id:'itemmaster',    label:'Item Master',          icon:Layers,        roles:['Admin','Asset Manager'] },
-                    { id:'reports',       label:'Reports',              icon:BarChart2,     roles:['Admin','Asset Manager'] },
+                    { id:'reports',       label:'Reports',              icon:BarChart2,     roles:['Admin'] },
                     { id:'notifications', label:'Notifications',        icon:Bell,          roles:['Admin','Asset Manager','Department Head','Employee'] },
                   ].filter(tab => tab.roles.includes(currentUser.role)).map(tab => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
@@ -1250,10 +1724,10 @@ export default function App() {
               {activeTab==='assets' && (
                 <div className="space-y-6">
                   <div className="premium-glass p-5 rounded-2xl border border-white/5 text-left">
-                    <div className="flex justify-between items-center pb-4 border-b border-white/5 mb-4"><h3 className="text-sm font-bold font-mono uppercase tracking-wide">Registered Assets Directory</h3><span className="text-[10px] text-zinc-500 font-mono">Count: {assets.length} items</span></div>
+                    <div className="flex justify-between items-center pb-4 border-b border-white/5 mb-4"><h3 className="text-sm font-bold font-mono uppercase tracking-wide">Registered Assets Directory</h3><span className="text-[10px] text-zinc-500 font-mono">Count: {filteredAssets.length} items</span></div>
                     <div className="space-y-3 font-mono text-xs">
                       <div className="grid grid-cols-12 text-[10px] font-bold text-zinc-500 border-b border-white/5 pb-2 px-2"><span className="col-span-2">TAG</span><span className="col-span-3">NAME</span><span className="col-span-2">CATEGORY</span><span className="col-span-2">HOLDER</span><span className="col-span-2 text-right">STATUS</span><span className="col-span-1 text-right">QR</span></div>
-                      {assets.map(a=>(
+                      {filteredAssets.map(a=>(
                         <div key={a.tag} className="grid grid-cols-12 items-center px-2 py-2 hover:bg-white/[0.02] rounded transition text-zinc-300">
                           <span className="col-span-2 font-bold text-white">{a.tag}</span>
                           <div className="col-span-3 flex flex-col"><span className="font-semibold text-zinc-200">{a.name}</span><span className="text-[9px] text-zinc-500">{a.serial}</span></div>
@@ -1278,7 +1752,33 @@ export default function App() {
               {/* ════ ALLOCATIONS ════ */}
               {activeTab==='allocations' && (
                 <div className="space-y-6 text-left">
-                  {pendingHandover && (<div className="premium-glass p-5 rounded-2xl border border-brand/20 bg-brand/5"><div className="flex items-center gap-2 pb-3 border-b border-brand/10 mb-3 text-brand"><ClipboardCheck className="w-5 h-5 animate-pulse"/><h3 className="text-sm font-bold uppercase tracking-wider font-mono">Digital Handover Sign-off Required</h3></div><p className="text-xs text-zinc-300 leading-relaxed">Allocation for [<strong>{pendingHandover.asset.name}</strong>] to [<strong>{pendingHandover.employee}</strong>] staged. Employee must acknowledge condition [<strong>{pendingHandover.asset.condition}</strong>].</p><div className="flex gap-2.5 mt-4"><button onClick={()=>executeAllocation(pendingHandover.asset.tag,pendingHandover.employee,pendingHandover.returnDate)} className="px-4 py-2 bg-brand hover:bg-brand/90 text-white rounded text-xs font-bold uppercase tracking-wider transition">E-Sign Handover</button><button onClick={()=>setPendingHandover(null)} className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded text-xs font-bold uppercase tracking-wider transition">Cancel</button></div></div>)}
+                  {pendingHandover && (() => {
+                    const isTargetEmployee = pendingHandover.employee === currentUser.name;
+                    const isManagerOrAdmin = currentUser.role === 'Admin' || currentUser.role === 'Asset Manager';
+                    const isDeptHeadOfEmployee = currentUser.role === 'Department Head' && (() => {
+                      const emp = employees.find(e => e.name === pendingHandover.employee);
+                      return emp && emp.department === currentUser.department;
+                    })();
+
+                    if (isTargetEmployee || isManagerOrAdmin || isDeptHeadOfEmployee) {
+                      return (
+                        <div className="premium-glass p-5 rounded-2xl border border-brand/20 bg-brand/5">
+                          <div className="flex items-center gap-2 pb-3 border-b border-brand/10 mb-3 text-brand">
+                            <ClipboardCheck className="w-5 h-5 animate-pulse"/>
+                            <h3 className="text-sm font-bold uppercase tracking-wider font-mono">Digital Handover Sign-off Required</h3>
+                          </div>
+                          <p className="text-xs text-zinc-300 leading-relaxed">
+                            Allocation for [<strong>{pendingHandover.asset.name}</strong>] to [<strong>{pendingHandover.employee}</strong>] staged. Employee must acknowledge condition [<strong>{pendingHandover.asset.condition}</strong>].
+                          </p>
+                          <div className="flex gap-2.5 mt-4">
+                            <button onClick={()=>executeAllocation(pendingHandover.asset.tag,pendingHandover.employee,pendingHandover.returnDate)} className="px-4 py-2 bg-brand hover:bg-brand/90 text-white rounded text-xs font-bold uppercase tracking-wider transition">E-Sign Handover</button>
+                            <button onClick={()=>setPendingHandover(null)} className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 rounded text-xs font-bold uppercase tracking-wider transition">Cancel</button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                   {conflictAsset && (<div className="premium-glass p-5 rounded-2xl border border-red-500/20 bg-red-950/5"><div className="flex items-center gap-2 pb-3 border-b border-red-950/30 mb-3 text-red-400"><AlertTriangle className="w-5 h-5"/><h3 className="text-sm font-bold uppercase tracking-wider font-mono">Conflict Alert</h3></div><p className="text-xs text-zinc-300">[<strong>{conflictAsset.name}</strong>] is [{conflictAsset.status}] by [{conflictAsset.holder}].</p><div className="flex flex-col gap-2 mt-4 max-w-md font-mono text-xs"><button onClick={()=>{addLog(conflictForm.employee,'REQUEST_TRANSFER',conflictAsset.tag,`Transfer from ${conflictAsset.holder}`);setConflictAsset(null);alert('Transfer request dispatched.');}} className="text-left p-2.5 rounded bg-zinc-950 border border-zinc-900 hover:border-brand/40 text-brand transition">&gt; Option 1. Dispatch Transfer request</button><button onClick={()=>{const alt=assets.find(a=>a.status==='Available'&&a.category===conflictAsset.category);if(alt){setPendingHandover({asset:alt,employee:conflictForm.employee,returnDate:conflictForm.returnDate});setConflictAsset(null);}else alert('No alternatives found.');}} className="text-left p-2.5 rounded bg-zinc-950 border border-zinc-900 hover:border-brand/40 text-brand transition">&gt; Option 2. Allocate alternative asset</button><button onClick={()=>{addLog(conflictForm.employee,'JOIN_WAITLIST',conflictAsset.tag,`Joined queue`);setConflictAsset(null);alert('Joined waitlist.');}} className="text-left p-2.5 rounded bg-zinc-950 border border-zinc-900 hover:border-brand/40 text-brand transition">&gt; Option 3. Join Waitlist Queue</button></div></div>)}
                   {/* Calendar Date Picker and Day Switcher Control Panel */}
                   <div className="premium-glass p-6 rounded-2xl border border-white/5 space-y-4">
@@ -1402,10 +1902,10 @@ export default function App() {
               {activeTab==='maintenance' && (
                 <div className="space-y-6 text-left">
                   <div className="premium-glass p-5 rounded-2xl border border-white/5">
-                    <div className="flex justify-between items-center pb-4 border-b border-white/5 mb-4"><h3 className="text-sm font-bold font-mono uppercase tracking-wide">Active Repair Tickets</h3>{(currentUser.role==='Admin'||currentUser.role==='Employee')&&(<button onClick={()=>setMaintenanceModalOpen(true)} className="px-2.5 py-1 bg-white hover:bg-zinc-200 text-black text-[10px] font-bold uppercase tracking-wider font-mono rounded">Raise Request</button>)}</div>
+                    <div className="flex justify-between items-center pb-4 border-b border-white/5 mb-4"><h3 className="text-sm font-bold font-mono uppercase tracking-wide">Active Repair Tickets</h3>{currentUser.role!=='Asset Manager'&&(<button onClick={()=>setMaintenanceModalOpen(true)} className="px-2.5 py-1 bg-white hover:bg-zinc-200 text-black text-[10px] font-bold uppercase tracking-wider font-mono rounded">Raise Request</button>)}</div>
                     <div className="space-y-3 font-mono text-xs">
                       <div className="grid grid-cols-12 text-[10px] font-bold text-zinc-500 border-b border-white/5 pb-2 px-2"><span className="col-span-2">ASSET</span><span className="col-span-4">ISSUE</span><span className="col-span-2">PRIORITY</span><span className="col-span-2">STATUS</span><span className="col-span-2 text-right">ACTION</span></div>
-                      {maintenance.map(t=>(<div key={t.id} className="grid grid-cols-12 items-center px-2 py-2 hover:bg-white/[0.02] rounded transition text-zinc-300"><span className="col-span-2 font-bold text-white">{t.assetTag}</span><span className="col-span-4 truncate pr-4">{t.description}</span><span className="col-span-2"><span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${t.priority==='High'?'bg-red-950/60 text-red-400':'bg-zinc-900 text-zinc-500'}`}>{t.priority}</span></span><span className="col-span-2 text-zinc-400">{t.status}</span><div className="col-span-2 text-right">{t.status==='Pending'&&(currentUser.role==='Admin'||currentUser.role==='Asset Manager')&&(<button onClick={()=>approveMaintenance(t.id)} className="px-2 py-1 bg-brand text-white text-[9px] uppercase font-bold rounded hover:bg-brand/90 transition">Approve</button>)}{t.status==='Approved'&&(currentUser.role==='Admin'||currentUser.role==='Asset Manager')&&(<button onClick={()=>resolveMaintenance(t.id)} className="px-2 py-1 bg-emerald-700 text-white text-[9px] uppercase font-bold rounded hover:bg-emerald-600 transition">Resolve</button>)}{t.status==='Resolved'&&(<span className="text-[10px] text-zinc-500 font-bold uppercase">Resolved ✓</span>)}</div></div>))}
+                      {filteredMaintenance.map(t=>(<div key={t.id} className="grid grid-cols-12 items-center px-2 py-2 hover:bg-white/[0.02] rounded transition text-zinc-300"><span className="col-span-2 font-bold text-white">{t.assetTag}</span><span className="col-span-4 truncate pr-4">{t.description}</span><span className="col-span-2"><span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${t.priority==='High'?'bg-red-950/60 text-red-400':'bg-zinc-900 text-zinc-500'}`}>{t.priority}</span></span><span className="col-span-2 text-zinc-400">{t.status}</span><div className="col-span-2 text-right">{t.status==='Pending'&&(currentUser.role==='Admin'||currentUser.role==='Asset Manager')&&(<button onClick={()=>approveMaintenance(t.id)} className="px-2 py-1 bg-brand text-white text-[9px] uppercase font-bold rounded hover:bg-brand/90 transition">Approve</button>)}{t.status==='Approved'&&(currentUser.role==='Admin'||currentUser.role==='Asset Manager')&&(<button onClick={()=>resolveMaintenance(t.id)} className="px-2 py-1 bg-emerald-700 text-white text-[9px] uppercase font-bold rounded hover:bg-emerald-600 transition">Resolve</button>)}{t.status==='Resolved'&&(<span className="text-[10px] text-zinc-500 font-bold uppercase">Resolved ✓</span>)}</div></div>))}
                     </div>
                   </div>
                 </div>
@@ -1673,7 +2173,7 @@ export default function App() {
                       {/* Export + Print buttons */}
                       <div className="flex gap-2 no-print">
                         <button onClick={exportInventoryCSV} className="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><FileDown className="w-3.5 h-3.5"/>Export CSV</button>
-                        <button onClick={()=>window.print()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><Printer className="w-3.5 h-3.5"/>Print / PDF</button>
+                        <button onClick={()=>exportReportsPDF('inventory')} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><Printer className="w-3.5 h-3.5"/>Print / Export PDF</button>
                       </div>
 
                       {/* KPI Cards */}
@@ -1742,7 +2242,7 @@ export default function App() {
                     <div className="space-y-5">
                       <div className="flex gap-2 no-print">
                         <button onClick={exportVendorCSV} className="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><FileDown className="w-3.5 h-3.5"/>Export CSV</button>
-                        <button onClick={()=>window.print()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><Printer className="w-3.5 h-3.5"/>Print / PDF</button>
+                        <button onClick={()=>exportReportsPDF('vendor')} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><Printer className="w-3.5 h-3.5"/>Print / Export PDF</button>
                       </div>
                       {/* Price Range Chart */}
                       <div className="premium-glass p-5 rounded-2xl border border-white/5">
@@ -1783,7 +2283,7 @@ export default function App() {
                     <div className="space-y-5">
                       <div className="flex gap-2 no-print">
                         <button onClick={exportOrdersCSV} className="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><FileDown className="w-3.5 h-3.5"/>Export CSV</button>
-                        <button onClick={()=>window.print()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><Printer className="w-3.5 h-3.5"/>Print / PDF</button>
+                        <button onClick={()=>exportReportsPDF('orders')} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><Printer className="w-3.5 h-3.5"/>Print / Export PDF</button>
                       </div>
                       {/* KPI Cards */}
                       <div className="grid grid-cols-3 gap-4">
@@ -1905,10 +2405,20 @@ export default function App() {
           {allocationModalOpen&&(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"><div className="premium-glass p-6 rounded-2xl border border-white/10 w-full max-w-md text-left font-mono"><div className="flex justify-between items-center pb-3 border-b border-white/5 mb-4"><h3 className="text-sm font-bold uppercase tracking-wider">Allocate Asset</h3><button onClick={()=>setAllocationModalOpen(false)}><X className="w-4 h-4"/></button></div><form onSubmit={handleAllocateAsset} className="space-y-4 text-xs"><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Asset Tag</label><select value={allocForm.assetTag} onChange={e=>setAllocForm(p=>({...p,assetTag:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand">{assets.filter(a=>!a.shared).map(a=><option key={a.tag} value={a.tag}>{a.tag} - {a.name} ({a.status})</option>)}</select></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Employee</label><select value={allocForm.employee} onChange={e=>setAllocForm(p=>({...p,employee:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand">{employees.map(e=><option key={e.email} value={e.name}>{e.name} ({e.department})</option>)}</select></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Return Date</label><input type="date" value={allocForm.returnDate} onChange={e=>setAllocForm(p=>({...p,returnDate:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand"/></div><button type="submit" className="w-full py-2 bg-brand text-white font-bold uppercase tracking-wider rounded transition hover:bg-brand/90 mt-4">Validate Allocation</button></form></div></div>)}
 
           {/* Book Resource */}
-          {bookingModalOpen&&(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"><div className="premium-glass p-6 rounded-2xl border border-white/10 w-full max-w-md text-left font-mono"><div className="flex justify-between items-center pb-3 border-b border-white/5 mb-4"><h3 className="text-sm font-bold uppercase tracking-wider">Book Shared Resource</h3><button onClick={()=>setBookingModalOpen(false)}><X className="w-4 h-4"/></button></div><form onSubmit={handleBooking} className="space-y-4 text-xs"><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Resource</label><select value={bookForm.resource} onChange={e=>setBookForm(p=>({...p,resource:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand">{assets.filter(a=>a.shared).map(a=><option key={a.tag} value={a.name}>{a.name} ({a.location})</option>)}</select></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Employee</label><select value={bookForm.employee} onChange={e=>setBookForm(p=>({...p,employee:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand">{employees.map(e=><option key={e.email} value={e.name}>{e.name}</option>)}</select></div><div className="grid grid-cols-2 gap-3"><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Start</label><input type="time" required value={bookForm.start} onChange={e=>setBookForm(p=>({...p,start:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand"/></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">End</label><input type="time" required value={bookForm.end} onChange={e=>setBookForm(p=>({...p,end:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand"/></div></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Date</label><input type="date" required value={bookForm.date} onChange={e=>setBookForm(p=>({...p,date:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand"/></div><button type="submit" className="w-full py-2 bg-brand text-white font-bold uppercase tracking-wider rounded transition hover:bg-brand/90 mt-4">Book Slot</button></form></div></div>)}
+          {bookingModalOpen&&(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"><div className="premium-glass p-6 rounded-2xl border border-white/10 w-full max-w-md text-left font-mono"><div className="flex justify-between items-center pb-3 border-b border-white/5 mb-4"><h3 className="text-sm font-bold uppercase tracking-wider">Book Shared Resource</h3><button onClick={()=>setBookingModalOpen(false)}><X className="w-4 h-4"/></button></div><form onSubmit={handleBooking} className="space-y-4 text-xs"><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Resource</label><select value={bookForm.resource} onChange={e=>setBookForm(p=>({...p,resource:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand">{assets.filter(a=>a.shared).map(a=><option key={a.tag} value={a.name}>{a.name} ({a.location})</option>)}</select></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Employee</label><select value={bookForm.employee} onChange={e=>setBookForm(p=>({...p,employee:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand">
+                        {(() => {
+                          let list = employees;
+                          if (currentUser.role === 'Department Head') {
+                            list = employees.filter(e => e.department === currentUser.department);
+                          } else if (currentUser.role === 'Employee') {
+                            list = employees.filter(e => e.email === currentUser.email);
+                          }
+                          return list.map(e => <option key={e.email} value={e.name}>{e.name}</option>);
+                        })()}
+                      </select></div><div className="grid grid-cols-2 gap-3"><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Start</label><input type="time" required value={bookForm.start} onChange={e=>setBookForm(p=>({...p,start:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand"/></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">End</label><input type="time" required value={bookForm.end} onChange={e=>setBookForm(p=>({...p,end:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand"/></div></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Date</label><input type="date" required value={bookForm.date} onChange={e=>setBookForm(p=>({...p,date:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand"/></div><button type="submit" className="w-full py-2 bg-brand text-white font-bold uppercase tracking-wider rounded transition hover:bg-brand/90 mt-4">Book Slot</button></form></div></div>)}
 
           {/* Maintenance */}
-          {maintenanceModalOpen&&(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"><div className="premium-glass p-6 rounded-2xl border border-white/10 w-full max-w-md text-left font-mono"><div className="flex justify-between items-center pb-3 border-b border-white/5 mb-4"><h3 className="text-sm font-bold uppercase tracking-wider">Raise Maintenance Request</h3><button onClick={()=>setMaintenanceModalOpen(false)}><X className="w-4 h-4"/></button></div><form onSubmit={handleMaintenance} className="space-y-4 text-xs"><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Asset</label><select value={maintForm.assetTag} onChange={e=>setMaintForm(p=>({...p,assetTag:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand">{assets.map(a=><option key={a.tag} value={a.tag}>{a.tag} - {a.name}</option>)}</select></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Issue Description</label><textarea required rows={3} value={maintForm.description} onChange={e=>setMaintForm(p=>({...p,description:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand resize-none" placeholder="Describe the issue..."/></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Priority</label><select value={maintForm.priority} onChange={e=>setMaintForm(p=>({...p,priority:e.target.value as any}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand"><option>Low</option><option>Medium</option><option>High</option></select></div><button type="submit" className="w-full py-2 bg-brand text-white font-bold uppercase tracking-wider rounded transition hover:bg-brand/90 mt-4">Submit Ticket</button></form></div></div>)}
+          {maintenanceModalOpen&&(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"><div className="premium-glass p-6 rounded-2xl border border-white/10 w-full max-w-md text-left font-mono"><div className="flex justify-between items-center pb-3 border-b border-white/5 mb-4"><h3 className="text-sm font-bold uppercase tracking-wider">Raise Maintenance Request</h3><button onClick={()=>setMaintenanceModalOpen(false)}><X className="w-4 h-4"/></button></div><form onSubmit={handleMaintenance} className="space-y-4 text-xs"><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Asset</label><select value={maintForm.assetTag} onChange={e=>setMaintForm(p=>({...p,assetTag:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand">{filteredAssets.map(a=><option key={a.tag} value={a.tag}>{a.tag} - {a.name}</option>)}</select></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Issue Description</label><textarea required rows={3} value={maintForm.description} onChange={e=>setMaintForm(p=>({...p,description:e.target.value}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand resize-none" placeholder="Describe the issue..."/></div><div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Priority</label><select value={maintForm.priority} onChange={e=>setMaintForm(p=>({...p,priority:e.target.value as any}))} className="w-full p-2 rounded bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand"><option>Low</option><option>Medium</option><option>High</option></select></div><button type="submit" className="w-full py-2 bg-brand text-white font-bold uppercase tracking-wider rounded transition hover:bg-brand/90 mt-4">Submit Ticket</button></form></div></div>)}
 
           {/* Create Order Modal */}
           {orderModalOpen&&(<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"><div className="premium-glass p-6 rounded-2xl border border-white/10 w-full max-w-2xl text-left font-mono max-h-[90vh] overflow-y-auto"><div className="flex justify-between items-center pb-3 border-b border-white/5 mb-4"><div><h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2"><ShoppingCart className="w-4 h-4 text-purple-400"/>Create New Order</h3><p className="text-[10px] text-zinc-500 mt-0.5">BOM + notifications auto-generated on creation.</p></div><button onClick={()=>setOrderModalOpen(false)}><X className="w-4 h-4"/></button></div><form onSubmit={handleCreateOrder} className="space-y-5 text-xs"><div className="col-span-2 space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Customer / Company *</label><input type="text" required value={newOrder.customer} onChange={e=>setNewOrder(p=>({...p,customer:e.target.value}))} className="w-full p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-purple-500" placeholder="e.g. ABC Manufacturing Ltd"/></div><div className="col-span-2 space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Notes</label><textarea rows={2} value={newOrder.notes} onChange={e=>setNewOrder(p=>({...p,notes:e.target.value}))} className="w-full p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-purple-500 resize-none" placeholder="Special instructions..."/></div><div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800 space-y-3"><h4 className="text-[10px] uppercase font-bold text-zinc-400 tracking-widest">Add Line Item</h4><div className="grid grid-cols-2 gap-3"><div className="space-y-1.5"><label className="text-zinc-500 uppercase text-[9px] font-bold">Product</label><select value={orderItemForm.productId} onChange={e=>setOrderItemForm(p=>({...p,productId:e.target.value}))} className="w-full p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-white outline-none focus:border-purple-500">{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div><div className="space-y-1.5"><label className="text-zinc-500 uppercase text-[9px] font-bold">Vendor</label><select value={orderItemForm.vendorId} onChange={e=>setOrderItemForm(p=>({...p,vendorId:e.target.value}))} className="w-full p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-white outline-none focus:border-purple-500">{availableVendorsForItem.length===0?<option>No vendors</option>:availableVendorsForItem.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></div><div className="space-y-1.5"><label className="text-zinc-500 uppercase text-[9px] font-bold">Quantity</label><input type="number" min={1} value={orderItemForm.quantity} onChange={e=>setOrderItemForm(p=>({...p,quantity:Number(e.target.value)}))} className="w-full p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-white outline-none focus:border-purple-500"/></div><div className="space-y-1.5"><label className="text-zinc-500 uppercase text-[9px] font-bold">Unit Price (₹)</label><input type="number" min={0} step="0.01" value={orderItemForm.unitPrice} onChange={e=>setOrderItemForm(p=>({...p,unitPrice:Number(e.target.value)}))} className="w-full p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-white outline-none focus:border-purple-500"/></div></div><button type="button" onClick={addItemToOrder} className="w-full py-2 border border-purple-700/40 bg-purple-950/20 text-purple-400 font-bold uppercase text-[10px] rounded-lg hover:bg-purple-950/40 transition flex items-center justify-center gap-1.5"><Plus className="w-3.5 h-3.5"/>Add to BOM</button></div>{newOrder.items.length>0&&(<div className="space-y-2"><h4 className="text-[10px] uppercase font-bold text-zinc-400 tracking-widest">BOM Items ({newOrder.items.length})</h4>{newOrder.items.map((item,idx)=>(<div key={idx} className="flex items-center gap-3 p-2.5 rounded-lg bg-zinc-950 border border-zinc-800"><div className="flex-1 min-w-0"><span className="font-bold text-white text-xs">{item.productName}</span><div className="text-[10px] text-zinc-500">Vendor: {item.vendorName} · Qty: {item.quantity} · <span className="text-emerald-400 font-bold">₹{(item.quantity*item.unitPrice).toLocaleString()}</span></div></div><button type="button" onClick={()=>removeItemFromOrder(idx)} className="p-1 rounded text-zinc-600 hover:text-red-400 transition"><Trash2 className="w-3.5 h-3.5"/></button></div>))}<div className="text-right text-xs font-bold text-emerald-400 font-mono pt-1">Total: ₹{newOrder.items.reduce((s,i)=>s+i.quantity*i.unitPrice,0).toLocaleString()}</div></div>)}<button type="submit" className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-bold uppercase tracking-wider rounded-lg transition flex items-center justify-center gap-2"><FileText className="w-4 h-4"/>Confirm Order &amp; Generate BOM</button></form></div></div>)}
