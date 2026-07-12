@@ -673,7 +673,7 @@ export default function App() {
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-brand to-indigo-500 flex items-center justify-center shadow-2xl shadow-brand/40 mb-4 scale-110">
               <Cpu className="w-11 h-11 text-white animate-pulse" />
             </div>
-            <h1 className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase bg-gradient-to-r from-brand via-indigo-400 to-cyan-400 bg-clip-text text-transparent animate-shiny">
+            <h1 className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase text-white">
               AssetFlow
             </h1>
             <span className="text-[10px] text-zinc-500 font-mono tracking-widest uppercase mt-2">
