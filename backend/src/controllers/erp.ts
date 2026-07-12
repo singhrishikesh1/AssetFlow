@@ -106,7 +106,7 @@ export const registerAsset = async (req: AuthRequest, res: Response) => {
     }
 
     // Auto-generate tag
-    const countRes = await query('SELECT COUNT(*) FROM assets');
+    const countRes = await query('SELECT COUNT(*) AS count FROM assets');
     const totalCount = parseInt(countRes.rows[0].count, 10);
     const tag = `AF-0${totalCount + 101}`;
 
@@ -481,6 +481,17 @@ export const createItemMaster = async (req: AuthRequest, res: Response) => {
     const qty = Number(quantity) || 0;
     const rt = Number(rate) || 0;
 
+    // Ensure product SKU exists in products table due to FK constraint
+    const productCheck = await query('SELECT sku FROM products WHERE sku = $1', [sku.trim()]);
+    if (productCheck.rows.length === 0) {
+      const tempProdId = `P${Date.now()}`;
+      await query(
+        `INSERT INTO products (id, name, category, description, sku, unit_of_measure)
+         VALUES ($1, $2, $3, $4, $5, 'unit')`,
+        [tempProdId, name.trim(), materialCategory, `Auto-generated description for SKU ${sku.trim()}`, sku.trim()]
+      );
+    }
+
     await query(
       `INSERT INTO item_masters (id, name, sku, material_category, quantity, rate, material_location, company_name, description)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
@@ -549,7 +560,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     await client.query('BEGIN');
 
     // Get next PO number
-    const countRes = await client.query('SELECT COUNT(*) FROM orders');
+    const countRes = await client.query('SELECT COUNT(*) AS count FROM orders');
     const count = parseInt(countRes.rows[0].count, 10);
     const orderNumber = `PO-${new Date().getFullYear()}-${String(count + 4).padStart(3, '0')}`;
     const id = `ORD${Date.now()}`;
