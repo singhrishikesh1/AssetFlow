@@ -1387,7 +1387,10 @@ export default function App() {
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-2">
                       <div className="lg:col-span-7 space-y-3 font-mono text-xs">
                         <div className="grid grid-cols-12 text-[10px] font-bold text-zinc-500 border-b border-white/5 pb-2 px-2"><span className="col-span-3">TAG</span><span className="col-span-5">ASSET</span><span className="col-span-4 text-right">STATUS</span></div>
-                        {audits[0].items.map(item=>(<div key={item.assetTag} className="grid grid-cols-12 items-center px-2 py-2 hover:bg-white/[0.02] rounded transition text-zinc-300"><span className="col-span-3 font-bold text-white">{item.assetTag}</span><span className="col-span-5">{item.name}</span><div className="col-span-4 text-right flex items-center justify-end gap-2"><span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${item.auditedStatus==='Verified'?'bg-emerald-950/60 text-emerald-400':item.auditedStatus==='Missing'?'bg-red-950/60 text-red-400':item.auditedStatus==='Damaged'?'bg-amber-950/60 text-amber-400':'bg-zinc-900 text-zinc-500'}`}>{item.auditedStatus}</span><button onClick={()=>handleAuditorScan(item.assetTag)} className="p-1 rounded hover:bg-white/5 text-zinc-500 hover:text-white transition"><QrCode className="w-3.5 h-3.5"/></button></div></div>))}
+                        {audits[0].items.map(item=>(<div key={item.assetTag} className="grid grid-cols-12 items-center px-2 py-2 hover:bg-white/[0.02] rounded transition text-zinc-300"><span className="col-span-3 font-bold text-white">{item.assetTag}</span><span className="col-span-5">{item.name}</span><div className="col-span-4 text-right flex items-center justify-end gap-2"><span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${item.auditedStatus==='Verified'?'bg-emerald-950/60 text-emerald-400':item.auditedStatus==='Missing'?'bg-red-950/60 text-red-400':item.auditedStatus==='Damaged'?'bg-amber-950/60 text-amber-400':'bg-zinc-900 text-zinc-500'}`}>{item.auditedStatus}</span><button onClick={() => {
+                          setQrModalContent({ title: item.name, subtitle: `Asset Tag: ${item.assetTag}`, codeValue: item.assetTag });
+                          setQrModalOpen(true);
+                        }} className="p-1 rounded hover:bg-white/5 text-zinc-500 hover:text-white transition"><QrCode className="w-3.5 h-3.5"/></button></div></div>))}
                       </div>
                       <div className="lg:col-span-5">
                         {scannedAssetDetails ? (
@@ -1901,7 +1904,7 @@ export default function App() {
                   Raw Code: {qrModalContent.codeValue}
                 </div>
                 
-                <div className="flex gap-2 justify-center">
+                <div className="flex flex-col gap-2 w-full">
                   <button onClick={() => {
                     const printWindow = window.open('', '_blank');
                     if (printWindow) {
@@ -1935,6 +1938,15 @@ export default function App() {
                   }} className="px-4 py-2 bg-white text-black hover:bg-zinc-200 text-xs font-bold uppercase tracking-wider rounded-lg transition flex items-center gap-1.5 justify-center w-full">
                     <Printer className="w-3.5 h-3.5"/>Print QR Label
                   </button>
+                  
+                  {qrModalContent.codeValue.startsWith('AF-') && (
+                    <button onClick={() => {
+                      handleAuditorScan(qrModalContent.codeValue);
+                      setQrModalOpen(false);
+                    }} className="px-4 py-2 border border-brand bg-brand/10 hover:bg-brand/20 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition flex items-center gap-1.5 justify-center w-full">
+                      <Check className="w-3.5 h-3.5 text-brand"/>Simulate Audit Scan
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
