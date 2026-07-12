@@ -669,10 +669,8 @@ export default function App() {
         /* ================= LOGIN / SIGNUP SCREEN ================= */
         <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-6 py-12">
           {/* Big AssetFlow Logo in Center */}
-          <div className="flex flex-col items-center mb-8 text-center animate-fade-in">
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-brand to-indigo-500 flex items-center justify-center shadow-2xl shadow-brand/40 mb-4 scale-110">
-              <Cpu className="w-11 h-11 text-white animate-pulse" />
-            </div>
+          <div className="flex flex-col items-center mb-6 text-center animate-fade-in">
+            <Cpu className="w-12 h-12 text-white mb-4 animate-pulse" />
             <h1 className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase text-white">
               AssetFlow
             </h1>
