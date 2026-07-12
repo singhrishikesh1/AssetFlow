@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { api } from './services/api';
 import {
   Building2, Laptop, AlertTriangle,
   Wrench, ClipboardCheck, History, BarChart3,
@@ -209,28 +210,25 @@ const SEED_NOTIFICATIONS: AppNotification[] = [
 // ─────────────────────────────────────────────
 export default function App() {
 
-  // ── Existing State ──────────────────────────
-  const [employees, setEmployees] = useState<Employee[]>(() => { const s = localStorage.getItem('af_employees'); return s ? JSON.parse(s) : [{ name: 'Priya Sharma', email: 'priya@assetflow.com', department: 'Engineering', role: 'Employee', status: 'Active' },{ name: 'Alex Mercer', email: 'alex@assetflow.com', department: 'Operations', role: 'Asset Manager', status: 'Active' },{ name: 'Raj Patel', email: 'raj@assetflow.com', department: 'Design', role: 'Employee', status: 'Active' },{ name: 'Sarah Jenkins', email: 'sarah@assetflow.com', department: 'Audit & Compliance', role: 'Employee', status: 'Active' },{ name: 'Marcus Brody', email: 'marcus@assetflow.com', department: 'Operations', role: 'Department Head', status: 'Active' },{ name: 'Rishikesh Singh', email: 'admin@assetflow.com', department: 'Operations', role: 'Admin', status: 'Active' }]; });
-  const [credentials, setCredentials] = useState<Record<string, string>>(() => { const s = localStorage.getItem('af_credentials'); return s ? JSON.parse(s) : { 'admin@assetflow.com': 'admin123', 'alex@assetflow.com': 'alex123', 'marcus@assetflow.com': 'marcus123', 'priya@assetflow.com': 'priya123', 'raj@assetflow.com': 'raj123', 'sarah@assetflow.com': 'sarah123' }; });
-  const [currentUser, setCurrentUser] = useState<Employee | null>(() => { const s = localStorage.getItem('af_current_user'); return s ? JSON.parse(s) : null; });
+  // ── Backend State ──────────────────────────
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard'|'org'|'assets'|'allocations'|'maintenance'|'audit'|'logs'|'products'|'orders'|'itemmaster'|'reports'|'notifications'>('dashboard');
   const [currentMenuTime, setCurrentMenuTime] = useState('');
   const [orgSubTab, setOrgSubTab] = useState<'departments'|'categories'|'employees'>('departments');
-  const [departments] = useState<Department[]>([{ name: 'Engineering', head: 'Marcus Brody', parent: 'None', status: 'Active' },{ name: 'Design', head: 'Raj Patel', parent: 'Engineering', status: 'Active' },{ name: 'Operations', head: 'Alex Mercer', parent: 'None', status: 'Active' },{ name: 'Audit & Compliance', head: 'Sarah Jenkins', parent: 'Operations', status: 'Active' }]);
-  const [categories] = useState<Category[]>([{ name: 'Electronics', warrantyPeriod: 365, customField: 'CPU / RAM specs' },{ name: 'Furniture', warrantyPeriod: 1095, customField: 'Material type' },{ name: 'Vehicles', warrantyPeriod: 730, customField: 'License Plate' },{ name: 'Office Spaces', warrantyPeriod: 0, customField: 'Capacity' }]);
-  const [assets, setAssets] = useState<Asset[]>([{ tag: 'AF-0114', name: 'MacBook Pro M3', category: 'Electronics', serial: 'S/N 83B4F83', cost: 2500, condition: 'New', status: 'Allocated', location: 'HQ - Floor 3', holder: 'Priya Sharma', shared: false },{ tag: 'AF-0341', name: 'Dell XPS 15', category: 'Electronics', serial: 'S/N 29A4D19', cost: 1800, condition: 'Good', status: 'Available', location: 'HQ - Floor 2', holder: 'None', shared: false },{ tag: 'AF-0883', name: 'Herman Miller Aeron', category: 'Furniture', serial: 'S/N 12B8C73', cost: 1200, condition: 'Good', status: 'Available', location: 'HQ - Room A1', holder: 'None', shared: false },{ tag: 'AF-1002', name: 'Conference Room B2', category: 'Office Spaces', serial: 'LOC-B2', cost: 0, condition: 'New', status: 'Available', location: 'HQ - Floor 1', holder: 'Shared', shared: true },{ tag: 'AF-0220', name: 'Tesla Model 3', category: 'Vehicles', serial: 'PLATE-AURA', cost: 42000, condition: 'Good', status: 'Available', location: 'Garage A', holder: 'Shared', shared: true }]);
-  const [bookings, setBookings] = useState<Booking[]>([{ id: 1, resource: 'Conference Room B2', user: 'Raj Patel', start: '09:00', end: '10:00', date: '2026-07-12', status: 'Ongoing' }]);
-  const [maintenance, setMaintenance] = useState<MaintenanceRequest[]>([{ id: 1, assetTag: 'AF-0341', description: 'Keyboard double space defect', priority: 'Medium', status: 'Pending' }]);
-  const [audits, setAudits] = useState<AuditCycle[]>([{ id: 12, scope: 'Engineering Department', auditor: 'Sarah Jenkins', dateRange: '2026-07-10 - 2026-07-15', status: 'Active', items: [{ assetTag: 'AF-0114', name: 'MacBook Pro M3', auditedStatus: 'Unchecked' },{ assetTag: 'AF-0341', name: 'Dell XPS 15', auditedStatus: 'Unchecked' },{ assetTag: 'AF-0883', name: 'Herman Miller Aeron', auditedStatus: 'Unchecked' }] }]);
-  const [deltaLogs, setDeltaLogs] = useState<DeltaLog[]>([{ id: 1, timestamp: '09:04:12 AM', actor: 'System Seed Engine', action: 'INITIALIZE_DB', detail: 'Pre-populated core assets, employee directory, and departments.' },{ id: 2, timestamp: '09:04:45 AM', actor: 'Marcus Brody (Admin)', action: 'ROLE_ELEVATION', detail: 'Priya Sharma promoted to Asset Manager permissions.' }]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [maintenance, setMaintenance] = useState<MaintenanceRequest[]>([]);
+  const [audits, setAudits] = useState<AuditCycle[]>([]);
+  const [deltaLogs, setDeltaLogs] = useState<DeltaLog[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [itemMasters, setItemMasters] = useState<ItemMaster[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
-  const [products] = useState<Product[]>(() => { const s = localStorage.getItem('af_products'); return s ? JSON.parse(s) : SEED_PRODUCTS; });
-  const [vendors] = useState<Vendor[]>(() => { const s = localStorage.getItem('af_vendors'); return s ? JSON.parse(s) : SEED_VENDORS; });
-  const [itemMasters, setItemMasters] = useState<ItemMaster[]>(() => { const s = localStorage.getItem('af_item_masters'); return s ? JSON.parse(s) : SEED_ITEM_MASTER; });
-  const [orders, setOrders] = useState<Order[]>(() => { const s = localStorage.getItem('af_orders'); return s ? JSON.parse(s) : SEED_ORDERS; });
-
-  // ── NEW State ───────────────────────────────
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => { const s = localStorage.getItem('af_notifications'); return s ? JSON.parse(s) : SEED_NOTIFICATIONS; });
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
   const notifBellRef = useRef<HTMLDivElement>(null);
 
@@ -282,15 +280,62 @@ export default function App() {
   const [pendingHandover, setPendingHandover] = useState<{asset:Asset;employee:string;returnDate:string}|null>(null);
   const [selectedAuditAssetTag, setSelectedAuditAssetTag] = useState<string|null>(null);
   const [scannedAssetDetails, setScannedAssetDetails] = useState<Asset|null>(null);
-  const [auditVerified] = useState<'unscanned'|'verifying'|'verified'|'damaged'|'missing'>('unscanned');
+  const [auditVerified, setAuditVerified] = useState<'unscanned'|'verifying'|'verified'|'damaged'|'missing'>('unscanned');
 
-  // ── localStorage Sync ───────────────────────
-  useEffect(() => { localStorage.setItem('af_employees', JSON.stringify(employees)); }, [employees]);
-  useEffect(() => { localStorage.setItem('af_credentials', JSON.stringify(credentials)); }, [credentials]);
-  useEffect(() => { if (currentUser) localStorage.setItem('af_current_user', JSON.stringify(currentUser)); else localStorage.removeItem('af_current_user'); }, [currentUser]);
-  useEffect(() => { localStorage.setItem('af_item_masters', JSON.stringify(itemMasters)); }, [itemMasters]);
-  useEffect(() => { localStorage.setItem('af_orders', JSON.stringify(orders)); }, [orders]);
-  useEffect(() => { localStorage.setItem('af_notifications', JSON.stringify(notifications)); }, [notifications]);
+  // Safe fetch utility
+  const safeFetch = async (fetchFn: () => Promise<any>, setter: (val: any) => void, defaultVal: any) => {
+    try {
+      const data = await fetchFn();
+      setter(data);
+    } catch (err) {
+      console.warn("Fetch failed:", err);
+      setter(defaultVal);
+    }
+  };
+
+  // Unified data fetcher
+  const fetchData = async (role?: string) => {
+    const userRole = role || currentUser?.role;
+    if (!userRole) return;
+
+    safeFetch(api.assets.getAssets, setAssets, []);
+    safeFetch(api.bookings.getBookings, setBookings, []);
+    safeFetch(api.maintenance.getMaintenance, setMaintenance, []);
+    safeFetch(api.audits.getAudits, setAudits, []);
+    safeFetch(api.notifications.getNotifications, setNotifications, []);
+    safeFetch(api.procurement.getProducts, setProducts, []);
+    safeFetch(api.procurement.getVendors, setVendors, []);
+    safeFetch(api.org.getDepartments, setDepartments, []);
+    safeFetch(api.org.getCategories, setCategories, []);
+
+    if (userRole === 'Admin') {
+      safeFetch(api.org.getEmployees, setEmployees, []);
+    }
+    if (userRole === 'Admin' || userRole === 'Asset Manager') {
+      safeFetch(api.logs.getLogs, setDeltaLogs, []);
+      safeFetch(api.procurement.getItemMasters, setItemMasters, []);
+      safeFetch(api.procurement.getOrders, setOrders, []);
+    }
+  };
+
+  // Auth session check on mount
+  useEffect(() => {
+    const initSession = async () => {
+      const token = localStorage.getItem('af_token');
+      if (token) {
+        try {
+          const res = await api.auth.me();
+          setCurrentUser(res.user);
+          fetchData(res.user.role);
+        } catch (err) {
+          console.warn("Invalid session token, logging out...");
+          localStorage.removeItem('af_token');
+          setCurrentUser(null);
+        }
+      }
+    };
+    initSession();
+  }, []);
 
   // ── Tab Role Guard ──────────────────────────
   useEffect(() => {
@@ -323,21 +368,6 @@ export default function App() {
 
   // ── Computed ────────────────────────────────
   const unreadCount = notifications.filter(n => !n.isRead && (n.targetUserId === 'all' || n.targetUserId === currentUser?.email)).length;
-
-  // ── Notification Helpers ────────────────────
-  const addNotification = (title: string, message: string, type: AppNotification['type'], link?: string, targetUserId = 'all') => {
-    const n: AppNotification = { id: `N${Date.now()}`, title, message, type, isRead: false, targetUserId, createdAt: new Date().toISOString(), link };
-    setNotifications(prev => [n, ...prev]);
-  };
-
-  const markRead = (id: string) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
-  const markAllRead = () => setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-
-  // ── DeltaLog ────────────────────────────────
-  const addLog = (actor: string, action: string, assetTag: string | undefined, detail: string) => {
-    const activeActor = currentUser ? `${currentUser.name} (${currentUser.role})` : actor;
-    setDeltaLogs(prev => [{ id: Date.now(), timestamp: new Date().toLocaleTimeString(), actor: activeActor, action, assetTag, detail }, ...prev]);
-  };
 
   // ── Product Helpers ─────────────────────────
   const getVendorsForProduct = (productId: string) => vendors.filter(v => v.products.some(p => p.productId === productId));
@@ -389,35 +419,31 @@ export default function App() {
   const bomTotal = (order: Order) => order.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
 
   // ── Create Order ────────────────────────────
-  const handleCreateOrder = (e: React.FormEvent) => {
+  const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newOrder.items.length === 0) { alert('Please add at least one item.'); return; }
-    const orderNum = `PO-${new Date().getFullYear()}-${String(orders.length + 4).padStart(3, '0')}`;
-    const total = newOrder.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-    const created: Order = { id: `ORD${Date.now()}`, orderNumber: orderNum, date: new Date().toISOString().split('T')[0], customer: newOrder.customer, items: newOrder.items, status: 'Confirmed', notes: newOrder.notes };
-    setOrders(prev => [created, ...prev]);
-    setActiveBOM(created);
-    // Trigger notifications
-    addNotification(`✅ Order Placed`, `Order ${orderNum} for ${newOrder.customer} confirmed. Total: ₹${total.toLocaleString()}.`, 'success', 'orders');
-    addNotification(`📄 BOM Generated`, `Bill of Materials auto-generated for ${orderNum} with ${newOrder.items.length} line item${newOrder.items.length > 1 ? 's' : ''}.`, 'info', 'orders');
-    addLog('System', 'CREATE_ORDER', undefined, `Order ${orderNum} created with ${newOrder.items.length} items. BOM auto-generated.`);
-    setNewOrder({ customer: '', notes: '', items: [] });
-    setOrderModalOpen(false);
+    try {
+      const res = await api.procurement.createOrder({ customer: newOrder.customer, notes: newOrder.notes, items: newOrder.items });
+      setActiveBOM(res);
+      setNewOrder({ customer: '', notes: '', items: [] });
+      setOrderModalOpen(false);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to create order.');
+    }
   };
 
   // ── Add Item Master ─────────────────────────
-  const handleAddItemMaster = (e: React.FormEvent) => {
+  const handleAddItemMaster = async (e: React.FormEvent) => {
     e.preventDefault();
-    const item: ItemMaster = { ...newItem, id: `IM${Date.now()}` };
-    setItemMasters(prev => [item, ...prev]);
-    // Low stock check
-    const threshold = LOW_STOCK_THRESHOLDS[item.materialCategory];
-    if (item.quantity < threshold) {
-      addNotification(`⚠ Low Stock Alert`, `${item.name} (${item.sku}) added with only ${item.quantity} units — below threshold of ${threshold.toLocaleString()} for ${item.materialCategory}.`, 'alert', 'itemmaster');
+    try {
+      await api.procurement.createItemMaster(newItem);
+      setNewItem({ name:'', sku:'', materialCategory:'Raw Material', quantity:0, rate:0, materialLocation:'', companyName:'', description:'' });
+      setItemMasterModalOpen(false);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to create Item Master record.');
     }
-    addLog('System', 'ADD_ITEM_MASTER', undefined, `Item Master record created: ${item.name} (${item.materialCategory})`);
-    setNewItem({ name:'', sku:'', materialCategory:'Raw Material', quantity:0, rate:0, materialLocation:'', companyName:'', description:'' });
-    setItemMasterModalOpen(false);
   };
 
   // ── Report Data ─────────────────────────────
@@ -464,20 +490,203 @@ export default function App() {
   };
 
   // ── Existing Asset/Allocation handlers ──────
-  const handleRegisterAsset = (e: React.FormEvent) => { e.preventDefault(); const tag = `AF-0${assets.length + 101}`; const a: Asset = { tag, name: newAsset.name, category: newAsset.category, serial: newAsset.serial, cost: Number(newAsset.cost)||0, condition: newAsset.condition, status: 'Available', location: newAsset.location, holder: newAsset.shared ? 'Shared' : 'None', shared: newAsset.shared }; setAssets(prev => [...prev, a]); addLog('', 'REGISTER_ASSET', tag, `Registered ${a.name}`); setNewAsset({ name:'', category:'Electronics', serial:'', cost:'', location:'', condition:'New', shared:false }); setRegisterModalOpen(false); };
-  const handleAllocateAsset = (e: React.FormEvent) => { e.preventDefault(); const asset = assets.find(a => a.tag === allocForm.assetTag); if (!asset) return; if (asset.status !== 'Available') { setConflictAsset(asset); setConflictForm(allocForm); setAllocationModalOpen(false); return; } setPendingHandover({ asset, employee: allocForm.employee, returnDate: allocForm.returnDate }); setAllocationModalOpen(false); };
-  const executeAllocation = (tag: string, employee: string, returnDate: string) => { setAssets(prev => prev.map(a => a.tag === tag ? { ...a, status: 'Allocated', holder: employee } : a)); addLog('', 'ALLOCATE_ASSET', tag, `Allocated to ${employee}. Return: ${returnDate||'Indefinite'}`); setPendingHandover(null); };
-  const handleBooking = (e: React.FormEvent) => { e.preventDefault(); const { resource, start, end } = bookForm; const hasOverlap = bookings.some(b => b.resource === resource && b.status !== 'Cancelled' && (start < b.end) && (end > b.start)); if (hasOverlap) { alert(`Conflict: ${resource} already booked.`); return; } setBookings(prev => [...prev, { id: Date.now(), resource, user: bookForm.employee, start, end, date: bookForm.date, status: 'Upcoming' }]); setAssets(prev => prev.map(a => a.name === resource ? { ...a, status: 'Reserved' } : a)); addLog('', 'BOOK_RESOURCE', undefined, `Booked ${resource}`); setBookingModalOpen(false); };
-  const handleMaintenance = (e: React.FormEvent) => { e.preventDefault(); setMaintenance(prev => [...prev, { id: Date.now(), assetTag: maintForm.assetTag, description: maintForm.description, priority: maintForm.priority, status: 'Pending' }]); addLog('', 'RAISE_MAINTENANCE', maintForm.assetTag, `Raised ticket for ${maintForm.assetTag}`); setMaintForm({ assetTag: 'AF-0114', description: '', priority: 'Medium' }); setMaintenanceModalOpen(false); };
-  const approveMaintenance = (id: number) => { let tag = ''; setMaintenance(prev => prev.map(t => { if (t.id === id) { tag = t.assetTag; return { ...t, status: 'Approved' }; } return t; })); setAssets(prev => prev.map(a => a.tag === tag ? { ...a, status: 'Under Maintenance' } : a)); addLog('', 'APPROVE_MAINTENANCE', tag, 'Approved'); };
-  const resolveMaintenance = (id: number) => { let tag = ''; setMaintenance(prev => prev.map(t => { if (t.id === id) { tag = t.assetTag; return { ...t, status: 'Resolved' }; } return t; })); setAssets(prev => prev.map(a => a.tag === tag ? { ...a, status: 'Available' } : a)); addLog('', 'RESOLVE_MAINTENANCE', tag, 'Resolved'); };
-  const handleAuditorScan = (tag: string) => { const asset = assets.find(a => a.tag === tag); if (!asset) return; setSelectedAuditAssetTag(tag); setScannedAssetDetails(asset); };
-  const saveAuditStatus = (status: 'Verified'|'Missing'|'Damaged') => { if (!selectedAuditAssetTag) return; setAudits(prev => prev.map(c => c.id === 12 ? { ...c, items: c.items.map(i => i.assetTag === selectedAuditAssetTag ? { ...i, auditedStatus: status } : i) } : c)); setAssets(prev => prev.map(a => { if (a.tag === selectedAuditAssetTag) { if (status === 'Missing') return { ...a, status: 'Lost' as any, condition: 'Missing' }; if (status === 'Damaged') return { ...a, condition: 'Damaged' }; return { ...a, condition: 'Good' }; } return a; })); if (status === 'Damaged') setMaintenance(prev => [...prev, { id: Date.now(), assetTag: selectedAuditAssetTag, description: 'Audit Flag: Damaged during cycle #12', priority: 'High', status: 'Pending' }]); addLog('', status === 'Damaged' ? 'AUDIT_FLAG_DISCREPANCY' : 'AUDIT_VERIFY', selectedAuditAssetTag, `Audited: ${status}`); setSelectedAuditAssetTag(null); setScannedAssetDetails(null); };
-  const handlePromoteRole = (email: string) => { setEmployees(prev => prev.map(emp => { if (emp.email === email) { const r = emp.role === 'Employee' ? 'Asset Manager' : emp.role === 'Asset Manager' ? 'Department Head' : emp.role === 'Department Head' ? 'Admin' : 'Employee'; const updated = { ...emp, role: r as Employee['role'] }; if (currentUser?.email === email) setCurrentUser(updated); return updated; } return emp; })); };
-  const handleLogin = (e: React.FormEvent) => { e.preventDefault(); setAuthError(''); const email = authEmail.trim().toLowerCase(); if (!email || !authPassword) { setAuthError('Please fill in all fields.'); return; } if (credentials[email] === authPassword) { const user = employees.find(emp => emp.email.toLowerCase() === email); if (user) { if (user.status === 'Inactive') { setAuthError('Account deactivated.'); return; } setCurrentUser(user); setAuthEmail(''); setAuthPassword(''); addLog(`${user.name}`, 'USER_LOGIN', undefined, 'Logged in.'); } else setAuthError('User not found.'); } else setAuthError('Invalid email or password.'); };
-  const handleSignup = (e: React.FormEvent) => { e.preventDefault(); setAuthError(''); const name = authName.trim(); const email = authEmail.trim().toLowerCase(); if (!name||!email||!authPassword||!authConfirmPassword) { setAuthError('Please fill in all fields.'); return; } if (authPassword !== authConfirmPassword) { setAuthError('Passwords do not match.'); return; } if (credentials[email]) { setAuthError('Account already exists.'); return; } const newEmp: Employee = { name, email, department: authDept, role: 'Employee', status: 'Active' }; setEmployees(prev => [...prev, newEmp]); setCredentials(prev => ({ ...prev, [email]: authPassword })); setCurrentUser(newEmp); setAuthName(''); setAuthEmail(''); setAuthPassword(''); setAuthConfirmPassword(''); };
-  const handleForgot = (e: React.FormEvent) => { e.preventDefault(); setAuthError(''); setAuthSuccess(''); const email = authEmail.trim().toLowerCase(); if (!email) { setAuthError('Please enter your email.'); return; } if (credentials[email]) setAuthSuccess(`Password: [${credentials[email]}]`); else setAuthError('No account found.'); };
-  const handleLogout = () => { if (currentUser) addLog(`${currentUser.name}`, 'USER_LOGOUT', undefined, 'Logged out.'); setCurrentUser(null); };
+  const handleRegisterAsset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.assets.registerAsset(newAsset);
+      setNewAsset({ name:'', category:'Electronics', serial:'', cost:'', location:'', condition:'New', shared:false });
+      setRegisterModalOpen(false);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to register asset.');
+    }
+  };
+
+  const handleAllocateAsset = (e: React.FormEvent) => {
+    e.preventDefault();
+    const asset = assets.find(a => a.tag === allocForm.assetTag);
+    if (!asset) return;
+    if (asset.status !== 'Available') {
+      setConflictAsset(asset);
+      setConflictForm(allocForm);
+      setAllocationModalOpen(false);
+      return;
+    }
+    setPendingHandover({ asset, employee: allocForm.employee, returnDate: allocForm.returnDate });
+    setAllocationModalOpen(false);
+  };
+
+  const executeAllocation = async (tag: string, employee: string, returnDate: string) => {
+    try {
+      await api.assets.allocateAsset(tag, employee, returnDate);
+      setPendingHandover(null);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to allocate asset.');
+    }
+  };
+
+  const handleBooking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const { resource, start, end, employee, date } = bookForm;
+    try {
+      await api.bookings.createBooking({ resource, user_name: employee, start_time: start, end_time: end, booking_date: date });
+      setBookingModalOpen(false);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to complete booking.');
+    }
+  };
+
+  const handleMaintenance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.maintenance.createMaintenance(maintForm);
+      setMaintForm({ assetTag: 'AF-0114', description: '', priority: 'Medium' });
+      setMaintenanceModalOpen(false);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to raise maintenance ticket.');
+    }
+  };
+
+  const approveMaintenance = async (id: number) => {
+    try {
+      await api.maintenance.approveMaintenance(id);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to approve ticket.');
+    }
+  };
+
+  const resolveMaintenance = async (id: number) => {
+    try {
+      await api.maintenance.resolveMaintenance(id);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to resolve ticket.');
+    }
+  };
+
+  const handleAuditorScan = (tag: string) => {
+    const asset = assets.find(a => a.tag === tag);
+    if (!asset) return;
+    setSelectedAuditAssetTag(tag);
+    setScannedAssetDetails(asset);
+  };
+
+  const saveAuditStatus = async (status: 'Verified'|'Missing'|'Damaged') => {
+    if (!selectedAuditAssetTag) return;
+    try {
+      await api.audits.saveAuditStatus(12, selectedAuditAssetTag, status);
+      setSelectedAuditAssetTag(null);
+      setScannedAssetDetails(null);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to save audit status.');
+    }
+  };
+
+  const handlePromoteRole = async (email: string) => {
+    try {
+      await api.org.promoteEmployee(email);
+      if (currentUser?.email === email) {
+        const res = await api.auth.me();
+        setCurrentUser(res.user);
+      }
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to elevate employee role.');
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccess('');
+    const email = authEmail.trim();
+    if (!email || !authPassword) {
+      setAuthError('Please fill in all fields.');
+      return;
+    }
+    try {
+      const res = await api.auth.login({ email, password: authPassword });
+      localStorage.setItem('af_token', res.token);
+      setCurrentUser(res.user);
+      setAuthEmail('');
+      setAuthPassword('');
+      fetchData(res.user.role);
+    } catch (err: any) {
+      setAuthError(err.message || 'Invalid email or password.');
+    }
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    const name = authName.trim();
+    const email = authEmail.trim().toLowerCase();
+    if (!name||!email||!authPassword||!authConfirmPassword) {
+      setAuthError('Please fill in all fields.');
+      return;
+    }
+    if (authPassword !== authConfirmPassword) {
+      setAuthError('Passwords do not match.');
+      return;
+    }
+    try {
+      const res = await api.auth.signup({ name, email, password: authPassword, department: authDept });
+      localStorage.setItem('af_token', res.token);
+      setCurrentUser(res.user);
+      setAuthName('');
+      setAuthEmail('');
+      setAuthPassword('');
+      setAuthConfirmPassword('');
+      fetchData(res.user.role);
+    } catch (err: any) {
+      setAuthError(err.message || 'Account already exists.');
+    }
+  };
+
+  const handleForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccess('');
+    const email = authEmail.trim().toLowerCase();
+    if (!email) {
+      setAuthError('Please enter your email.');
+      return;
+    }
+    try {
+      const res = await api.auth.forgot(email);
+      setAuthSuccess(res.message);
+    } catch (err: any) {
+      setAuthError(err.message || 'No account found.');
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('af_token');
+    setCurrentUser(null);
+  };
+
+  const markRead = async (id: string) => {
+    try {
+      await api.notifications.markRead(id);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const markAllRead = async () => {
+    try {
+      await api.notifications.markAllRead();
+      fetchData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // ── Notification Icon Config ────────────────
   const notifIconConfig: Record<AppNotification['type'], { icon: React.ReactNode; color: string; bg: string }> = {
