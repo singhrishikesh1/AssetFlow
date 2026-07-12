@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from './services/api';
+import { Html5Qrcode } from 'html5-qrcode';
 import {
   Building2, Laptop, AlertTriangle,
   Wrench, ClipboardCheck, History, BarChart3,
@@ -281,6 +282,75 @@ export default function App() {
   const [selectedAuditAssetTag, setSelectedAuditAssetTag] = useState<string|null>(null);
   const [scannedAssetDetails, setScannedAssetDetails] = useState<Asset|null>(null);
   const [auditVerified, setAuditVerified] = useState<'unscanned'|'verifying'|'verified'|'damaged'|'missing'>('unscanned');
+
+  // QR Scanner States & Helpers
+  const [cameraActive, setCameraActive] = useState(false);
+  const [qrScanner, setQrScanner] = useState<any>(null);
+
+  const startScanner = async () => {
+    setCameraActive(true);
+    setTimeout(async () => {
+      try {
+        const html5QrCode = new Html5Qrcode("reader");
+        setQrScanner(html5QrCode);
+        
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 200, height: 200 }
+          },
+          (decodedText) => {
+            const cleanText = decodedText.trim();
+            const match = assets.find(a => a.tag.toLowerCase() === cleanText.toLowerCase() || a.name.toLowerCase() === cleanText.toLowerCase());
+            if (match) {
+              handleAuditorScan(match.tag);
+              stopScanner(html5QrCode);
+              
+              // Play scanner success beep sound
+              try {
+                const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.type = 'sine';
+                osc.frequency.value = 900;
+                gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.12);
+              } catch (e) {}
+            }
+          },
+          () => {} // scan error callback (suppressed to prevent spam)
+        );
+      } catch (err) {
+        console.error("Camera scan start error:", err);
+        setCameraActive(false);
+      }
+    }, 120);
+  };
+
+  const stopScanner = async (activeScanner = qrScanner) => {
+    if (activeScanner && activeScanner.isScanning) {
+      try {
+        await activeScanner.stop();
+      } catch (err) {
+        console.error("Scanner stop error:", err);
+      }
+    }
+    setCameraActive(false);
+    setQrScanner(null);
+  };
+
+  // Cleanup scanner on activeTab changes or unmount
+  useEffect(() => {
+    return () => {
+      if (qrScanner && qrScanner.isScanning) {
+        qrScanner.stop().catch(console.error);
+      }
+    };
+  }, [qrScanner, activeTab]);
 
   // Safe fetch utility
   const safeFetch = async (fetchFn: () => Promise<any>, setter: (val: any) => void, defaultVal: any) => {
@@ -1015,8 +1085,21 @@ export default function App() {
                             <div className="space-y-1.5 text-zinc-400"><div className="flex justify-between"><span>Asset:</span><span className="text-white font-bold">{scannedAssetDetails.name}</span></div><div className="flex justify-between"><span>Location:</span><span className="text-zinc-300">{scannedAssetDetails.location}</span></div><div className="flex justify-between"><span>Condition:</span><span className="text-zinc-300">{scannedAssetDetails.condition}</span></div></div>
                             <div className="pt-2 border-t border-zinc-800 flex flex-col gap-2"><span className="text-[9px] uppercase tracking-widest text-zinc-500 font-bold">Mark As:</span><button onClick={()=>saveAuditStatus('Verified')} className="w-full py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold uppercase text-[10px] rounded transition">✓ Verified</button><button onClick={()=>saveAuditStatus('Damaged')} className="w-full py-1.5 bg-amber-700 hover:bg-amber-600 text-white font-bold uppercase text-[10px] rounded transition">⚠ Damaged</button><button onClick={()=>saveAuditStatus('Missing')} className="w-full py-1.5 bg-red-700 hover:bg-red-600 text-white font-bold uppercase text-[10px] rounded transition">✗ Missing</button></div>
                           </div>
+                        ) : cameraActive ? (
+                          <div className="p-4 bg-zinc-950 rounded-xl border border-zinc-800 flex flex-col items-center gap-3 w-full">
+                            <div className="flex justify-between items-center w-full pb-2 border-b border-zinc-900 mb-2">
+                              <span className="text-brand font-bold uppercase text-[9px] tracking-wider animate-pulse flex items-center gap-1.5">📷 Live Camera Scanner</span>
+                              <button onClick={() => stopScanner()} className="px-2 py-0.5 bg-red-950/60 hover:bg-red-900/60 text-red-400 border border-red-900/40 rounded text-[9px] uppercase font-bold tracking-wide transition">Cancel</button>
+                            </div>
+                            <div id="reader" className="w-full max-w-[320px] h-[240px] rounded-lg overflow-hidden bg-black border border-zinc-900"></div>
+                            <span className="text-[9px] text-zinc-500 font-mono text-center leading-normal">Point camera at asset QR code tag (e.g. "AF-0114")</span>
+                          </div>
                         ) : (
-                          <div className="p-4 bg-zinc-950 rounded-xl border border-zinc-800 flex flex-col items-center justify-center gap-3 h-full min-h-[200px] font-mono text-xs"><QrCode className="w-8 h-8 text-zinc-700"/><span className="text-zinc-600 text-center">Click QR icon to simulate scanning</span></div>
+                          <div className="p-4 bg-zinc-950 rounded-xl border border-zinc-800 flex flex-col items-center justify-center gap-3 h-full min-h-[220px] font-mono text-xs">
+                            <QrCode className="w-8 h-8 text-zinc-700"/>
+                            <span className="text-zinc-500 text-center font-mono leading-normal">Click QR icon to simulate scanning<br/>or start webcam scan</span>
+                            <button onClick={startScanner} className="mt-1 px-3 py-1.5 bg-brand hover:bg-brand/90 text-white font-bold uppercase text-[10px] tracking-wider rounded-lg transition-all duration-300 shadow shadow-brand/20">Start Camera Scanner</button>
+                          </div>
                         )}
                       </div>
                     </div>
