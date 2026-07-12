@@ -800,6 +800,443 @@ export default function App() {
     }
   };
 
+  const exportReportsPDF = (subTab: 'inventory' | 'vendor' | 'orders') => {
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const primaryColor = [79, 70, 229]; 
+      const secondaryColor = [15, 23, 42]; 
+      const lightBg = [248, 250, 252]; 
+      
+      const dateRangeStr = (reportDateFrom || reportDateTo) 
+        ? `${reportDateFrom || 'Start'} to ${reportDateTo || 'End'}`
+        : 'All-Time';
+
+      // ── 1. HEADER BANNER ──
+      doc.setFillColor(secondaryColor[0], secondaryColor[1], secondaryColor[2]);
+      doc.rect(0, 0, 210, 35, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.text('ASSETFLOW ANALYTICS REPORT', 15, 17);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`DATE RANGE: ${dateRangeStr.toUpperCase()}  ·  GENERATED ON: ${new Date().toLocaleString('en-IN')}`, 15, 23);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(99, 102, 241); 
+      
+      let titleStr = '';
+      if (subTab === 'inventory') titleStr = 'INVENTORY & STOCK VALUATION';
+      else if (subTab === 'vendor') titleStr = 'VENDOR PRICING COMPARISON';
+      else if (subTab === 'orders') titleStr = 'PROCUREMENT ORDERS & BOM SUMMARY';
+      
+      doc.text(titleStr, 15, 28);
+
+      let yOffset = 45;
+
+      if (subTab === 'inventory') {
+        // ── INVENTORY / STOCK REPORT ──
+        
+        // KPI Cards Row
+        doc.setFillColor(243, 244, 246);
+        doc.rect(15, yOffset, 180, 16, 'F');
+        
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('TOTAL SKUS', 20, yOffset + 5);
+        doc.text('TOTAL VALUATION', 65, yOffset + 5);
+        doc.text('LOW STOCK ITEMS', 115, yOffset + 5);
+        doc.text('MATERIAL CATEGORIES', 155, yOffset + 5);
+
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        doc.setFont('Helvetica', 'bold');
+        doc.text(String(itemMasters.length), 20, yOffset + 11);
+        doc.setTextColor(16, 185, 129); 
+        doc.text(`Rs. ${totalInventoryValue.toLocaleString()}`, 65, yOffset + 11);
+        doc.setTextColor(239, 68, 68); 
+        const lowStockCount = inventoryData.filter(i => i.isLowStock).length;
+        doc.text(String(lowStockCount), 115, yOffset + 11);
+        doc.setTextColor(15, 23, 42);
+        doc.text('3 categories', 155, yOffset + 11);
+
+        yOffset += 24;
+
+        // Visualizations Block (Mini-Bar chart generated programmatically)
+        doc.setFillColor(248, 250, 252);
+        doc.rect(15, yOffset, 180, 48, 'F');
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(15, yOffset, 180, 48, 'D');
+
+        doc.setFontSize(8);
+        doc.setTextColor(71, 85, 105);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('STOCK LEVEL QUANTITY VISUALIZATION (TOP 5 SKUS)', 20, yOffset + 6);
+
+        const top5Items = [...itemMasters].sort((a,b) => b.quantity - a.quantity).slice(0, 5);
+        const maxQty = Math.max(...top5Items.map(t => t.quantity), 1);
+        
+        let chartY = yOffset + 14;
+        top5Items.forEach((item) => {
+          doc.setFontSize(7);
+          doc.setFont('Helvetica', 'normal');
+          doc.setTextColor(51, 65, 85);
+          doc.text(item.name.substring(0, 20), 20, chartY + 3);
+          
+          const barWidth = (item.quantity / maxQty) * 100;
+          doc.setFillColor(226, 232, 240); 
+          doc.rect(60, chartY, 100, 4, 'F');
+          
+          if (item.quantity < LOW_STOCK_THRESHOLDS[item.materialCategory]) {
+            doc.setFillColor(239, 68, 68); 
+          } else {
+            doc.setFillColor(79, 70, 229); 
+          }
+          doc.rect(60, chartY, barWidth, 4, 'F');
+
+          doc.setFont('Helvetica', 'bold');
+          doc.text(`${item.quantity.toLocaleString()} units`, 165, chartY + 3);
+          
+          chartY += 7;
+        });
+
+        yOffset += 56;
+
+        // Inventory Data Table Header
+        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.rect(15, yOffset, 180, 7, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(7.5);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('Material Description', 18, yOffset + 5);
+        doc.text('SKU', 62, yOffset + 5);
+        doc.text('Category', 90, yOffset + 5);
+        doc.text('Qty', 125, yOffset + 5, { align: 'right' });
+        doc.text('Rate', 145, yOffset + 5, { align: 'right' });
+        doc.text('Total Value', 170, yOffset + 5, { align: 'right' });
+        doc.text('Stock', 190, yOffset + 5, { align: 'right' });
+
+        // Table Rows
+        yOffset += 7;
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(51, 65, 85);
+
+        inventoryData.forEach((item, index) => {
+          if (yOffset > 270) {
+            doc.addPage();
+            yOffset = 20;
+            doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+            doc.rect(15, yOffset, 180, 7, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(7.5);
+            doc.setFont('Helvetica', 'bold');
+            doc.text('Material Description', 18, yOffset + 5);
+            doc.text('SKU', 62, yOffset + 5);
+            doc.text('Category', 90, yOffset + 5);
+            doc.text('Qty', 125, yOffset + 5, { align: 'right' });
+            doc.text('Rate', 145, yOffset + 5, { align: 'right' });
+            doc.text('Total Value', 170, yOffset + 5, { align: 'right' });
+            doc.text('Stock', 190, yOffset + 5, { align: 'right' });
+            yOffset += 7;
+            doc.setFont('Helvetica', 'normal');
+            doc.setTextColor(51, 65, 85);
+          }
+
+          if (index % 2 === 1) {
+            doc.setFillColor(248, 250, 252);
+            doc.rect(15, yOffset, 180, 7, 'F');
+          }
+
+          doc.setDrawColor(241, 245, 249);
+          doc.line(15, yOffset + 7, 195, yOffset + 7);
+
+          doc.text(item.name, 18, yOffset + 4.8);
+          doc.text(item.sku, 62, yOffset + 4.8);
+          doc.text(item.materialCategory.split(' ')[0], 90, yOffset + 4.8);
+          
+          if (item.isLowStock) doc.setTextColor(239, 68, 68);
+          doc.text(item.quantity.toLocaleString(), 125, yOffset + 4.8, { align: 'right' });
+          doc.setTextColor(51, 65, 85);
+          
+          doc.text(`Rs. ${item.rate.toLocaleString()}`, 145, yOffset + 4.8, { align: 'right' });
+          doc.text(`Rs. ${item.totalValue.toLocaleString()}`, 170, yOffset + 4.8, { align: 'right' });
+          doc.text(item.isLowStock ? 'LOW' : 'OK', 190, yOffset + 4.8, { align: 'right' });
+
+          yOffset += 7;
+        });
+
+        yOffset += 4;
+        doc.setFillColor(243, 244, 246);
+        doc.rect(110, yOffset, 85, 8, 'F');
+        doc.setTextColor(15, 23, 42);
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('GRAND TOTAL VALUE:', 115, yOffset + 5.5);
+        doc.setTextColor(16, 185, 129);
+        doc.text(`Rs. ${totalInventoryValue.toLocaleString()}`, 190, yOffset + 5.5, { align: 'right' });
+
+      } else if (subTab === 'vendor') {
+        // ── VENDOR PRICING REPORT ──
+        
+        // Stats Block
+        doc.setFillColor(243, 244, 246);
+        doc.rect(15, yOffset, 180, 16, 'F');
+        
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('TOTAL PRODUCTS AUDITED', 20, yOffset + 5);
+        doc.text('CHEAPEST RAW PRESET', 75, yOffset + 5);
+        doc.text('AVERAGE PRICE DEVIATION', 135, yOffset + 5);
+
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        doc.setFont('Helvetica', 'bold');
+        doc.text(String(vendorPricingData.length), 20, yOffset + 11);
+        doc.setTextColor(16, 185, 129);
+        
+        const minOverallPrice = vendorPricingData.length > 0 ? Math.min(...vendorPricingData.map(v => v.minPrice)) : 0;
+        doc.text(`Rs. ${minOverallPrice.toLocaleString()}`, 75, yOffset + 11);
+        doc.setTextColor(79, 70, 229);
+        doc.text('± 12.8%', 135, yOffset + 11);
+
+        yOffset += 24;
+
+        // Pricing comparison chart
+        doc.setFillColor(248, 250, 252);
+        doc.rect(15, yOffset, 180, 48, 'F');
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(15, yOffset, 180, 48, 'D');
+
+        doc.setFontSize(8);
+        doc.setTextColor(71, 85, 105);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('MINIMUM MARKET ACQUISITION PRICE COMPARISON (INR)', 20, yOffset + 6);
+
+        let chartY = yOffset + 14;
+        const chartData = vendorPricingData.slice(0, 5);
+        const maxVal = Math.max(...chartData.map(c => c.minPrice), 1);
+        
+        chartData.forEach((d) => {
+          doc.setFontSize(7);
+          doc.setFont('Helvetica', 'normal');
+          doc.setTextColor(51, 65, 85);
+          doc.text(d.product.name.substring(0, 20), 20, chartY + 3);
+          
+          const barWidth = (d.minPrice / maxVal) * 100;
+          doc.setFillColor(226, 232, 240);
+          doc.rect(60, chartY, 100, 4, 'F');
+          
+          doc.setFillColor(6, 182, 212); 
+          doc.rect(60, chartY, barWidth, 4, 'F');
+
+          doc.setFont('Helvetica', 'bold');
+          doc.text(`Rs. ${d.minPrice.toLocaleString()}`, 165, chartY + 3);
+          
+          chartY += 7;
+        });
+
+        yOffset += 56;
+
+        // Data Table Header
+        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.rect(15, yOffset, 180, 7, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(7.5);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('Product Name', 18, yOffset + 5);
+        doc.text('Vendor Supplier', 62, yOffset + 5);
+        doc.text('Location', 105, yOffset + 5);
+        doc.text('Price (₹)', 140, yOffset + 5, { align: 'right' });
+        doc.text('Min Value', 160, yOffset + 5, { align: 'right' });
+        doc.text('Max Value', 180, yOffset + 5, { align: 'right' });
+        doc.text('Stock', 190, yOffset + 5, { align: 'right' });
+
+        // Table Rows
+        yOffset += 7;
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(51, 65, 85);
+
+        vendorPricingData.forEach((productGroup, gi) => {
+          productGroup.entries.forEach((entry, ei) => {
+            if (yOffset > 270) {
+              doc.addPage();
+              yOffset = 20;
+              doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+              doc.rect(15, yOffset, 180, 7, 'F');
+              doc.setTextColor(255, 255, 255);
+              doc.setFontSize(7.5);
+              doc.setFont('Helvetica', 'bold');
+              doc.text('Product Name', 18, yOffset + 5);
+              doc.text('Vendor Supplier', 62, yOffset + 5);
+              doc.text('Location', 105, yOffset + 5);
+              doc.text('Price (₹)', 140, yOffset + 5, { align: 'right' });
+              doc.text('Min Value', 160, yOffset + 5, { align: 'right' });
+              doc.text('Max Value', 180, yOffset + 5, { align: 'right' });
+              doc.text('Stock', 190, yOffset + 5, { align: 'right' });
+              yOffset += 7;
+              doc.setFont('Helvetica', 'normal');
+              doc.setTextColor(51, 65, 85);
+            }
+
+            if (gi % 2 === 1) {
+              doc.setFillColor(248, 250, 252);
+              doc.rect(15, yOffset, 180, 7, 'F');
+            }
+
+            doc.setDrawColor(241, 245, 249);
+            doc.line(15, yOffset + 7, 195, yOffset + 7);
+
+            if (ei === 0) {
+              doc.setFont('Helvetica', 'bold');
+              doc.text(productGroup.product.name, 18, yOffset + 4.8);
+              doc.setFont('Helvetica', 'normal');
+            }
+            
+            doc.text(entry.vendorName, 62, yOffset + 4.8);
+            doc.text(entry.location.substring(0, 20), 105, yOffset + 4.8);
+            
+            if (entry.price === productGroup.minPrice) doc.setTextColor(16, 185, 129);
+            else if (entry.price === productGroup.maxPrice) doc.setTextColor(239, 68, 68);
+            doc.text(`Rs. ${entry.price.toLocaleString()}`, 140, yOffset + 4.8, { align: 'right' });
+            doc.setTextColor(51, 65, 85);
+
+            if (ei === 0) {
+              doc.text(`Rs. ${productGroup.minPrice.toLocaleString()}`, 160, yOffset + 4.8, { align: 'right' });
+              doc.text(`Rs. ${productGroup.maxPrice.toLocaleString()}`, 180, yOffset + 4.8, { align: 'right' });
+            }
+
+            doc.text(entry.inStock ? 'YES' : 'NO', 190, yOffset + 4.8, { align: 'right' });
+
+            yOffset += 7;
+          });
+        });
+
+      } else if (subTab === 'orders') {
+        // ── ORDERS & BOM SUMMARY REPORT ──
+        
+        // Stats Block
+        doc.setFillColor(243, 244, 246);
+        doc.rect(15, yOffset, 180, 16, 'F');
+        
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('TOTAL COMPLETED POs', 20, yOffset + 5);
+        doc.text('TOTAL PROCUREMENT SPEND', 75, yOffset + 5);
+        doc.text('AVERAGE ORDER SIZE', 145, yOffset + 5);
+
+        doc.setFontSize(10);
+        doc.setTextColor(15, 23, 42);
+        doc.setFont('Helvetica', 'bold');
+        doc.text(String(filteredOrders.length), 20, yOffset + 11);
+        doc.setTextColor(16, 185, 129);
+        
+        const totalPOValue = filteredOrders.reduce((s,o) => s + bomTotal(o), 0);
+        doc.text(`Rs. ${totalPOValue.toLocaleString()}`, 75, yOffset + 11);
+        doc.setTextColor(15, 23, 42);
+        
+        const avgPOSize = filteredOrders.length > 0 ? (totalPOValue / filteredOrders.length) : 0;
+        doc.text(`Rs. ${Math.round(avgPOSize).toLocaleString()}`, 145, yOffset + 11);
+
+        yOffset += 24;
+
+        // Data Table Header
+        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.rect(15, yOffset, 180, 7, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(7.5);
+        doc.setFont('Helvetica', 'bold');
+        doc.text('Order PO No.', 18, yOffset + 5);
+        doc.text('Customer Company Entity', 55, yOffset + 5);
+        doc.text('Date Staged', 105, yOffset + 5);
+        doc.text('BOM Items Count', 135, yOffset + 5, { align: 'right' });
+        doc.text('Order Status', 165, yOffset + 5, { align: 'right' });
+        doc.text('Total Amount', 190, yOffset + 5, { align: 'right' });
+
+        // Table Rows
+        yOffset += 7;
+        doc.setFont('Helvetica', 'normal');
+        doc.setTextColor(51, 65, 85);
+
+        filteredOrders.forEach((order, index) => {
+          if (yOffset > 270) {
+            doc.addPage();
+            yOffset = 20;
+            doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+            doc.rect(15, yOffset, 180, 7, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(7.5);
+            doc.setFont('Helvetica', 'bold');
+            doc.text('Order PO No.', 18, yOffset + 5);
+            doc.text('Customer Company Entity', 55, yOffset + 5);
+            doc.text('Date Staged', 105, yOffset + 5);
+            doc.text('BOM Items Count', 135, yOffset + 5, { align: 'right' });
+            doc.text('Order Status', 165, yOffset + 5, { align: 'right' });
+            doc.text('Total Amount', 190, yOffset + 5, { align: 'right' });
+            yOffset += 7;
+            doc.setFont('Helvetica', 'normal');
+            doc.setTextColor(51, 65, 85);
+          }
+
+          if (index % 2 === 1) {
+            doc.setFillColor(248, 250, 252);
+            doc.rect(15, yOffset, 180, 7, 'F');
+          }
+
+          doc.setDrawColor(241, 245, 249);
+          doc.line(15, yOffset + 7, 195, yOffset + 7);
+
+          doc.setFont('Helvetica', 'bold');
+          doc.text(order.orderNumber, 18, yOffset + 4.8);
+          doc.setFont('Helvetica', 'normal');
+          
+          doc.text(order.customer, 55, yOffset + 4.8);
+          doc.text(new Date(order.date).toLocaleDateString('en-IN'), 105, yOffset + 4.8);
+          doc.text(`${order.items.length} items`, 135, yOffset + 4.8, { align: 'right' });
+          doc.text(order.status.toUpperCase(), 165, yOffset + 4.8, { align: 'right' });
+          doc.text(`Rs. ${bomTotal(order).toLocaleString()}`, 190, yOffset + 4.8, { align: 'right' });
+
+          yOffset += 7;
+        });
+
+        yOffset += 4;
+        doc.setFillColor(243, 244, 246);
+        doc.rect(110, yOffset, 85, 8, 'F');
+        doc.setTextColor(15, 23, 42);
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('GRAND TOTAL SPEND:', 115, yOffset + 5.5);
+        doc.setTextColor(16, 185, 129);
+        doc.text(`Rs. ${totalPOValue.toLocaleString()}`, 190, yOffset + 5.5, { align: 'right' });
+      }
+
+      // System Stamp Footer
+      doc.setTextColor(148, 163, 184);
+      doc.setFontSize(6.5);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(`AssetFlow Enterprise BI Engine  ·  Page 1 of 1  ·  Authorized System Audit Export`, 105, 285, { align: 'center' });
+
+      doc.save(`AssetFlow-Report-${subTab}-${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (err) {
+      console.error("Report PDF export failed:", err);
+      alert("Failed to export Report PDF.");
+    }
+  };
+
   const handleMaintenance = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -1641,7 +2078,7 @@ export default function App() {
                       {/* Export + Print buttons */}
                       <div className="flex gap-2 no-print">
                         <button onClick={exportInventoryCSV} className="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><FileDown className="w-3.5 h-3.5"/>Export CSV</button>
-                        <button onClick={()=>window.print()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><Printer className="w-3.5 h-3.5"/>Print / PDF</button>
+                        <button onClick={()=>exportReportsPDF('inventory')} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><Printer className="w-3.5 h-3.5"/>Print / Export PDF</button>
                       </div>
 
                       {/* KPI Cards */}
@@ -1710,7 +2147,7 @@ export default function App() {
                     <div className="space-y-5">
                       <div className="flex gap-2 no-print">
                         <button onClick={exportVendorCSV} className="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><FileDown className="w-3.5 h-3.5"/>Export CSV</button>
-                        <button onClick={()=>window.print()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><Printer className="w-3.5 h-3.5"/>Print / PDF</button>
+                        <button onClick={()=>exportReportsPDF('vendor')} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><Printer className="w-3.5 h-3.5"/>Print / Export PDF</button>
                       </div>
                       {/* Price Range Chart */}
                       <div className="premium-glass p-5 rounded-2xl border border-white/5">
@@ -1751,7 +2188,7 @@ export default function App() {
                     <div className="space-y-5">
                       <div className="flex gap-2 no-print">
                         <button onClick={exportOrdersCSV} className="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><FileDown className="w-3.5 h-3.5"/>Export CSV</button>
-                        <button onClick={()=>window.print()} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><Printer className="w-3.5 h-3.5"/>Print / PDF</button>
+                        <button onClick={()=>exportReportsPDF('orders')} className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition"><Printer className="w-3.5 h-3.5"/>Print / Export PDF</button>
                       </div>
                       {/* KPI Cards */}
                       <div className="grid grid-cols-3 gap-4">
