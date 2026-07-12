@@ -1351,6 +1351,21 @@ export default function App() {
     }
   };
 
+  const triggerPresetLogin = async (email: string) => {
+    setAuthError('');
+    setAuthSuccess('');
+    try {
+      const res = await api.auth.login({ email, password: 'admin123' });
+      localStorage.setItem('af_token', res.token);
+      setCurrentUser(res.user);
+      setAuthEmail('');
+      setAuthPassword('');
+      fetchData(res.user.role);
+    } catch (err: any) {
+      setAuthError(err.message || 'Invalid email or password.');
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -1487,10 +1502,10 @@ export default function App() {
                 <div className="pt-3 border-t border-white/5 mt-2 text-zinc-500 text-[10px]">
                   <p className="font-bold uppercase tracking-wider text-center text-zinc-400 mb-2">Select Login Preset:</p>
                   <div className="grid grid-cols-2 gap-2 font-mono text-[9px]">
-                    <button type="button" onClick={() => { setAuthEmail('admin@assetflow.com'); setAuthPassword('admin123'); }} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">👑 Admin</button>
-                    <button type="button" onClick={() => { setAuthEmail('manager@assetflow.com'); setAuthPassword('admin123'); }} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">💼 Manager</button>
-                    <button type="button" onClick={() => { setAuthEmail('head@assetflow.com'); setAuthPassword('admin123'); }} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">👔 Dept Head</button>
-                    <button type="button" onClick={() => { setAuthEmail('employee@assetflow.com'); setAuthPassword('admin123'); }} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">👤 Employee</button>
+                    <button type="button" onClick={() => triggerPresetLogin('admin@assetflow.com')} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">👑 Admin</button>
+                    <button type="button" onClick={() => triggerPresetLogin('manager@assetflow.com')} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">💼 Manager</button>
+                    <button type="button" onClick={() => triggerPresetLogin('head@assetflow.com')} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">👔 Dept Head</button>
+                    <button type="button" onClick={() => triggerPresetLogin('employee@assetflow.com')} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">👤 Employee</button>
                   </div>
                 </div>
               </form>
