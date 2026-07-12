@@ -12,13 +12,19 @@ import {
   ChevronLeft, ChevronDown, Tag, MapPin, Store, Filter,
   Layers, Factory, Boxes, Bell, TrendingUp, Download,
   BarChart2, PieChart, Calendar, CheckCheck, Info,
-  AlertCircle, CheckCircle2, Eye, FileDown, Sparkles
+  AlertCircle, CheckCircle2, Eye, FileDown, Sparkles,
+  Sun, Moon
 } from 'lucide-react';
 
 // ─── Logo ────────────────────────────────────
-const AppleLogo: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+const AnumaticsLogo: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="6.5" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <path d="M 22,75 L 50,20 L 78,75" />
+    <path d="M 32,75 L 50,38 L 68,75" />
+    <path d="M 22,75 H 32" />
+    <path d="M 68,75 H 78" />
+    <path d="M 43,55 L 50,65 L 80,30" strokeWidth={8} />
+    <path d="M 68,30 H 80 V42" strokeWidth={8} />
   </svg>
 );
 
@@ -211,6 +217,23 @@ const SEED_NOTIFICATIONS: AppNotification[] = [
 //  APP
 // ─────────────────────────────────────────────
 export default function App() {
+
+  // ── Theme State ────────────────────────────
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('af_theme');
+    return saved ? saved === 'dark' : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('af_theme', darkMode ? 'dark' : 'light');
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+    } else {
+      document.documentElement.classList.add('light');
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
 
   // ── Backend State ──────────────────────────
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -481,9 +504,9 @@ export default function App() {
 
   // ── Clock ───────────────────────────────────
   useEffect(() => {
-    const tick = () => setCurrentMenuTime(new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).replace(',', ''));
+    const tick = () => setCurrentMenuTime(new Date().toLocaleTimeString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }).replace(/,/g, ''));
     tick();
-    const t = setInterval(tick, 30000);
+    const t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, []);
 
@@ -679,7 +702,7 @@ export default function App() {
       doc.setTextColor(255, 255, 255);
       doc.setFont('Helvetica', 'bold');
       doc.setFontSize(20);
-      doc.text('ASSETFLOW ERP', 15, 18);
+      doc.text('ANUMATICS ERP', 15, 18);
 
       doc.setFont('Helvetica', 'normal');
       doc.setFontSize(9);
@@ -791,7 +814,7 @@ export default function App() {
       doc.text('Receiver / Store Keeper', 170, yOffset + 4, { align: 'center' });
 
       doc.setFontSize(6);
-      doc.text('System Generated Document · Securely authenticated via AssetFlow ERP.', 105, 282, { align: 'center' });
+      doc.text('System Generated Document · Securely authenticated via ANUMATICS ERP.', 105, 282, { align: 'center' });
 
       doc.save(`Invoice-${order.orderNumber}.pdf`);
     } catch (err) {
@@ -969,15 +992,15 @@ export default function App() {
         <video autoPlay loop muted playsInline className="w-full h-full object-cover opacity-20"
           src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260508_064122_c4750c0e-7476-4b44-94a2-a85a65c63bf2.mp4" />
       </div>
-      <div className="hidden md:block pointer-events-none fixed inset-y-0 left-1/2 -translate-x-[calc(50%+36rem)] w-px bg-white/5 z-[5] no-print" />
-      <div className="hidden md:block pointer-events-none fixed inset-y-0 left-1/2 translate-x-[calc(-50%+36rem)] w-px bg-white/5 z-[5] no-print" />
+      <div className="hidden md:block pointer-events-none fixed inset-y-0 left-8 w-px bg-white/5 z-[5] no-print" />
+      <div className="hidden md:block pointer-events-none fixed inset-y-0 right-8 w-px bg-white/5 z-[5] no-print" />
 
       {currentUser === null ? (
         /* ════════════════ LOGIN ════════════════ */
         <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-6 py-12">
           <div className="flex flex-col items-center mb-6 text-center">
-            <Cpu className="w-12 h-12 text-white mb-4 animate-pulse" />
-            <h1 className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase text-white">AssetFlow</h1>
+            <AnumaticsLogo className="w-24 h-24 text-white mb-4 animate-pulse" />
+            <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-none uppercase text-white">ANUMATICS</h1>
             <span className="text-[10px] text-zinc-500 font-mono tracking-widest uppercase mt-2">Enterprise Asset &amp; Resource Management</span>
           </div>
           <div className="premium-glass p-8 rounded-3xl border border-white/10 w-full max-w-md text-left font-mono">
@@ -1025,14 +1048,23 @@ export default function App() {
         <>
           {/* ── Top Bar ── */}
           <div className="relative z-30 w-full h-10 bg-black/50 backdrop-blur-md border-b border-white/10 no-print">
-            <div className="max-w-6xl mx-auto px-6 h-full flex items-center justify-between text-xs font-semibold">
-              <div className="flex items-center gap-4">
-                <AppleLogo className="w-3.5 h-3.5 text-zinc-300 stroke-[2.5]"/>
-                <span className="font-extrabold uppercase tracking-wide text-zinc-400">AssetFlow</span>
+            <div className="w-full px-6 h-full flex items-center justify-between text-xs font-semibold">
+              <div className="flex items-center gap-2">
+                <AnumaticsLogo className="w-6 h-6 text-brand" />
+                <span className="font-extrabold uppercase tracking-wide text-zinc-400 text-[10px] leading-none">ANUMATICS</span>
               </div>
               <div className="flex items-center gap-4 text-white/50">
                 <span className="px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-900/40 text-[9px] uppercase font-bold tracking-wide">Active: {currentUser.role}</span>
                 <span className="font-mono text-[10px] tracking-widest">{currentMenuTime}</span>
+
+                {/* ── Theme Toggle ── */}
+                <button
+                  onClick={() => setDarkMode(!darkMode)}
+                  className="p-1.5 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition flex items-center justify-center"
+                  title="Toggle Theme"
+                >
+                  {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                </button>
 
                 {/* ── Notification Bell ── */}
                 <div className="relative" ref={notifBellRef}>
@@ -1086,14 +1118,14 @@ export default function App() {
             </div>
           </div>
 
-          <main className="relative z-10 w-full max-w-6xl mx-auto px-6 py-8 flex flex-col md:flex-row gap-8">
+          <main className="relative z-10 w-full px-6 md:px-8 py-8 flex flex-col md:flex-row gap-8">
 
             {/* ── Sidebar ── */}
             <div className="w-full md:w-64 shrink-0 flex flex-col gap-6 no-print">
               <div className="premium-glass p-5 rounded-2xl border border-white/5 text-left">
                 <div className="flex items-center gap-2.5 mb-6">
-                  <Cpu className="w-5 h-5 text-white animate-pulse"/>
-                  <div><h1 className="text-sm font-bold tracking-wide uppercase font-mono leading-none">AssetFlow</h1><span className="text-[9px] text-zinc-500 font-mono tracking-widest uppercase">ERP Engine</span></div>
+                  <AnumaticsLogo className="w-8 h-8 text-brand" />
+                  <div><h1 className="text-xs font-bold tracking-wide uppercase font-mono leading-none">ANUMATICS</h1><span className="text-[8px] text-zinc-500 font-mono tracking-widest uppercase mt-1 block">ERP Engine</span></div>
                 </div>
                 <div className="space-y-1">
                   {[
@@ -1535,7 +1567,7 @@ export default function App() {
                         </div>
                       </div>
                       <div className="bom-print-area p-6">
-                        <div className="print-only-header hidden"><h1 className="bom-company-name">AssetFlow ERP</h1><h2 className="bom-doc-title">Bill of Materials (BOM)</h2></div>
+                        <div className="print-only-header hidden"><h1 className="bom-company-name">ANUMATICS ERP</h1><h2 className="bom-doc-title">Bill of Materials (BOM)</h2></div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">{[{label:'Order No.',value:activeBOM.orderNumber},{label:'Date',value:activeBOM.date},{label:'Customer',value:activeBOM.customer},{label:'Status',value:activeBOM.status}].map(f=>(<div key={f.label} className="bom-meta-field"><span className="text-[9px] text-zinc-500 font-mono uppercase font-bold block">{f.label}</span><span className="text-xs text-white font-mono font-bold">{f.value}</span></div>))}</div>
                         {activeBOM.notes&&<div className="mb-5 p-3 rounded-lg bg-zinc-900/50 border border-zinc-800 text-xs text-zinc-400 font-mono"><span className="font-bold text-zinc-300">Notes: </span>{activeBOM.notes}</div>}
                         <div className="bom-table-container rounded-xl overflow-hidden border border-zinc-800/50"><table className="w-full text-xs font-mono bom-table"><thead><tr className="bg-zinc-900/80 border-b border-zinc-800"><th className="text-left px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">#</th><th className="text-left px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Item</th><th className="text-left px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Category</th><th className="text-left px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Vendor</th><th className="text-right px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Qty</th><th className="text-right px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Unit ₹</th><th className="text-right px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Total</th></tr></thead><tbody>{activeBOM.items.map((item,idx)=>{const cfg=MATERIAL_CATEGORY_CONFIG[item.materialCategory];return(<tr key={idx} className="border-b border-zinc-800/50 hover:bg-white/[0.02] transition"><td className="px-4 py-3 text-zinc-500">{idx+1}</td><td className="px-4 py-3 font-bold text-white">{item.productName}</td><td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${cfg.bg} ${cfg.color} ${cfg.border}`}>{item.materialCategory}</span></td><td className="px-4 py-3 text-zinc-400">{item.vendorName}</td><td className="px-4 py-3 text-right text-zinc-300">{item.quantity}</td><td className="px-4 py-3 text-right text-zinc-300">₹{item.unitPrice.toLocaleString()}</td><td className="px-4 py-3 text-right font-bold text-white">₹{(item.quantity*item.unitPrice).toLocaleString()}</td></tr>);})}</tbody><tfoot><tr className="bg-zinc-900/60"><td colSpan={5} className="px-4 py-3 text-right text-xs font-bold text-zinc-300 uppercase tracking-wider">Grand Total</td><td className="px-4 py-3"></td><td className="px-4 py-3 text-right text-lg font-black text-emerald-400 font-mono">₹{bomTotal(activeBOM).toLocaleString()}</td></tr></tfoot></table></div>
