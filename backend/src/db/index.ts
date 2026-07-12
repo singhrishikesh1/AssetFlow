@@ -130,12 +130,16 @@ const seedSqlite = async () => {
       ('Office Spaces', 0, 'Capacity');
     `);
     
-    // Insert admin user dynamically hashed
+    // Insert default users dynamically hashed
     const stmt = sqliteDb.prepare(`
       INSERT INTO employees (name, email, password_hash, department, role, status)
-      VALUES ('Rishikesh Singh', 'admin@assetflow.com', ?, 'Operations', 'Admin', 'Active')
+      VALUES 
+      ('Rishikesh Singh', 'admin@assetflow.com', ?, 'Operations', 'Admin', 'Active'),
+      ('Sarah Jenkins', 'manager@assetflow.com', ?, 'Operations', 'Asset Manager', 'Active'),
+      ('Raj Patel', 'head@assetflow.com', ?, 'Engineering', 'Department Head', 'Active'),
+      ('Priya Sharma', 'employee@assetflow.com', ?, 'Engineering', 'Employee', 'Active')
     `);
-    stmt.run(passHash);
+    stmt.run(passHash, passHash, passHash, passHash);
 
     // Seed core assets
     sqliteDb.exec(`
