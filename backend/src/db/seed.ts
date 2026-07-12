@@ -35,22 +35,15 @@ async function seed() {
     // 4. Seed Employees (Hashed Passwords)
     console.log('👥 Seeding employees...');
     const salt = await bcrypt.genSalt(10);
-    const passAdmin = await bcrypt.hash('admin123', salt);
-    const passAlex = await bcrypt.hash('alex123', salt);
-    const passMarcus = await bcrypt.hash('marcus123', salt);
-    const passPriya = await bcrypt.hash('priya123', salt);
-    const passRaj = await bcrypt.hash('raj123', salt);
-    const passSarah = await bcrypt.hash('sarah123', salt);
+    const passHash = await bcrypt.hash('admin123', salt);
 
     await client.query(`
       INSERT INTO employees (name, email, password_hash, department, role, status) VALUES
       ('Rishikesh Singh', 'admin@assetflow.com', $1, 'Operations', 'Admin', 'Active'),
-      ('Alex Mercer', 'alex@assetflow.com', $2, 'Operations', 'Asset Manager', 'Active'),
-      ('Marcus Brody', 'marcus@assetflow.com', $3, 'Operations', 'Department Head', 'Active'),
-      ('Priya Sharma', 'priya@assetflow.com', $4, 'Engineering', 'Employee', 'Active'),
-      ('Raj Patel', 'raj@assetflow.com', $5, 'Design', 'Employee', 'Active'),
-      ('Sarah Jenkins', 'sarah@assetflow.com', $6, 'Audit & Compliance', 'Employee', 'Active');
-    `, [passAdmin, passAlex, passMarcus, passPriya, passRaj, passSarah]);
+      ('Sarah Jenkins', 'manager@assetflow.com', $1, 'Operations', 'Asset Manager', 'Active'),
+      ('Raj Patel', 'head@assetflow.com', $1, 'Engineering', 'Department Head', 'Active'),
+      ('Priya Sharma', 'employee@assetflow.com', $1, 'Engineering', 'Employee', 'Active');
+    `, [passHash]);
 
     // 5. Seed Assets
     console.log('💻 Seeding core assets...');

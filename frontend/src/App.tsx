@@ -1461,7 +1461,15 @@ export default function App() {
                 <div className="space-y-1.5"><label className="text-zinc-400 uppercase text-[9px] font-bold">Password</label><input type="password" required value={authPassword} onChange={e=>setAuthPassword(e.target.value)} className="w-full p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 text-white outline-none focus:border-brand" placeholder="••••••••"/></div>
                 <div className="flex justify-end"><button type="button" onClick={()=>{setAuthMode('forgot');setAuthError('');setAuthSuccess('');}} className="text-[10px] text-brand hover:underline font-semibold">Forgot Password?</button></div>
                 <button type="submit" className="w-full py-2.5 bg-brand hover:bg-brand/90 text-white font-bold uppercase tracking-wider rounded-lg transition shadow-lg shadow-brand/20">Log In</button>
-                <div className="text-center pt-3 text-[10px] text-zinc-500 border-t border-white/5 mt-2">Demo: <span className="text-zinc-400">admin@assetflow.com</span> / <span className="text-zinc-400">admin123</span></div>
+                <div className="pt-3 border-t border-white/5 mt-2 text-zinc-500 text-[10px]">
+                  <p className="font-bold uppercase tracking-wider text-center text-zinc-400 mb-2">Select Login Preset:</p>
+                  <div className="grid grid-cols-2 gap-2 font-mono text-[9px]">
+                    <button type="button" onClick={() => { setAuthEmail('admin@assetflow.com'); setAuthPassword('admin123'); }} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">👑 Admin</button>
+                    <button type="button" onClick={() => { setAuthEmail('manager@assetflow.com'); setAuthPassword('admin123'); }} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">💼 Manager</button>
+                    <button type="button" onClick={() => { setAuthEmail('head@assetflow.com'); setAuthPassword('admin123'); }} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">👔 Dept Head</button>
+                    <button type="button" onClick={() => { setAuthEmail('employee@assetflow.com'); setAuthPassword('admin123'); }} className="p-2 rounded bg-zinc-950 border border-zinc-800 text-zinc-300 hover:border-brand/40 text-left truncate transition">👤 Employee</button>
+                  </div>
+                </div>
               </form>
             )}
             {authMode==='signup' && (
