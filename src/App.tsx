@@ -895,10 +895,8 @@ export default function App() {
             {/* Left Sidebar Menu */}
             <div className="w-full md:w-64 shrink-0 flex flex-col gap-6">
               <div className="premium-glass p-5 rounded-2xl border border-white/5 text-left">
-                <div className="flex items-center gap-2 mb-6">
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-brand to-indigo-500 flex items-center justify-center">
-                    <Cpu className="w-4.5 h-4.5 text-white" />
-                  </div>
+                <div className="flex items-center gap-2.5 mb-6">
+                  <Cpu className="w-5 h-5 text-white animate-pulse" />
                   <div>
                     <h1 className="text-sm font-bold tracking-wide uppercase font-mono leading-none">AssetFlow</h1>
                     <span className="text-[9px] text-zinc-500 font-mono tracking-widest uppercase">ERP Engine</span>
