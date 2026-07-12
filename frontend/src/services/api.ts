@@ -1,4 +1,6 @@
-const BASE_URL = 'http://localhost:5001/api';
+const BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:5001/api'
+  : `http://${window.location.hostname}:5001/api`;
 
 // Helper to get token
 const getHeaders = () => {

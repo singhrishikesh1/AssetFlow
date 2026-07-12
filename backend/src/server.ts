@@ -33,7 +33,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Start Server
-app.listen(PORT, () => {
+app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`🚀 AssetFlow Backend API Server running on port ${PORT}`);
   console.log(`🔗 Health check available at http://localhost:${PORT}/api/health`);
 });
