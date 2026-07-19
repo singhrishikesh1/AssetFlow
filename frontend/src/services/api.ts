@@ -1,6 +1,35 @@
-const BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:5001/api'
-  : `http://${window.location.hostname}:5001/api`;
+import { mockApi } from './mockApi';
+
+const getBaseUrl = () => {
+  const envUrl = (import.meta.env as any).VITE_API_URL;
+  if (envUrl) return envUrl;
+
+  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:5001/api'
+    : `http://${window.location.hostname}:5001/api`;
+};
+
+const BASE_URL = getBaseUrl();
+
+let isBackendUnreachable = false;
+
+const executeWithFallback = async <T>(apiCall: () => Promise<T>, mockCall: () => Promise<T>): Promise<T> => {
+  if (isBackendUnreachable) {
+    return mockCall();
+  }
+
+  try {
+    return await apiCall();
+  } catch (err: any) {
+    const isNetworkError = err instanceof TypeError || err.message?.includes('Failed to fetch') || err.message?.includes('network');
+    if (isNetworkError) {
+      console.warn('⚠️ API connection failed. Automatically routing all requests to client-side Mock Storage Fallback.');
+      isBackendUnreachable = true;
+      return mockCall();
+    }
+    throw err;
+  }
+};
 
 // Helper to get token
 const getHeaders = () => {
@@ -35,79 +64,179 @@ export const api = {
   // Auth
   auth: {
     login: (credentials: any) => 
-      request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
+      executeWithFallback(
+        () => request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
+        () => mockApi.auth.login(credentials)
+      ),
     signup: (userData: any) => 
-      request('/auth/signup', { method: 'POST', body: JSON.stringify(userData) }),
+      executeWithFallback(
+        () => request('/auth/signup', { method: 'POST', body: JSON.stringify(userData) }),
+        () => mockApi.auth.signup(userData)
+      ),
     forgot: (email: string) => 
-      request('/auth/forgot', { method: 'POST', body: JSON.stringify({ email }) }),
+      executeWithFallback(
+        () => request('/auth/forgot', { method: 'POST', body: JSON.stringify({ email }) }),
+        () => mockApi.auth.forgot(email)
+      ),
     me: () => 
-      request('/auth/me')
+      executeWithFallback(
+        () => request('/auth/me'),
+        () => mockApi.auth.me()
+      )
   },
 
   // Org Setup
   org: {
-    getDepartments: () => request('/departments'),
-    getCategories: () => request('/categories'),
-    getEmployees: () => request('/employees'),
+    getDepartments: () => 
+      executeWithFallback(
+        () => request('/departments'),
+        () => mockApi.org.getDepartments()
+      ),
+    getCategories: () => 
+      executeWithFallback(
+        () => request('/categories'),
+        () => mockApi.org.getCategories()
+      ),
+    getEmployees: () => 
+      executeWithFallback(
+        () => request('/employees'),
+        () => mockApi.org.getEmployees()
+      ),
     promoteEmployee: (email: string) => 
-      request('/employees/promote', { method: 'POST', body: JSON.stringify({ email }) })
+      executeWithFallback(
+        () => request('/employees/promote', { method: 'POST', body: JSON.stringify({ email }) }),
+        () => mockApi.org.promoteEmployee(email)
+      )
   },
 
   // Asset Lifecycle
   assets: {
-    getAssets: () => request('/assets'),
+    getAssets: () => 
+      executeWithFallback(
+        () => request('/assets'),
+        () => mockApi.assets.getAssets()
+      ),
     registerAsset: (asset: any) => 
-      request('/assets', { method: 'POST', body: JSON.stringify(asset) }),
+      executeWithFallback(
+        () => request('/assets', { method: 'POST', body: JSON.stringify(asset) }),
+        () => mockApi.assets.registerAsset(asset)
+      ),
     allocateAsset: (tag: string, employee: string, returnDate?: string) => 
-      request('/assets/allocate', { method: 'POST', body: JSON.stringify({ tag, employee, returnDate }) })
+      executeWithFallback(
+        () => request('/assets/allocate', { method: 'POST', body: JSON.stringify({ tag, employee, returnDate }) }),
+        () => mockApi.assets.allocateAsset(tag, employee, returnDate)
+      )
   },
 
   // Bookings
   bookings: {
-    getBookings: () => request('/bookings'),
+    getBookings: () => 
+      executeWithFallback(
+        () => request('/bookings'),
+        () => mockApi.bookings.getBookings()
+      ),
     createBooking: (booking: any) => 
-      request('/bookings', { method: 'POST', body: JSON.stringify(booking) })
+      executeWithFallback(
+        () => request('/bookings', { method: 'POST', body: JSON.stringify(booking) }),
+        () => mockApi.bookings.createBooking(booking)
+      )
   },
 
   // Maintenance
   maintenance: {
-    getMaintenance: () => request('/maintenance'),
+    getMaintenance: () => 
+      executeWithFallback(
+        () => request('/maintenance'),
+        () => mockApi.maintenance.getMaintenance()
+      ),
     createMaintenance: (ticket: any) => 
-      request('/maintenance', { method: 'POST', body: JSON.stringify(ticket) }),
+      executeWithFallback(
+        () => request('/maintenance', { method: 'POST', body: JSON.stringify(ticket) }),
+        () => mockApi.maintenance.createMaintenance(ticket)
+      ),
     approveMaintenance: (id: number) => 
-      request(`/maintenance/${id}/approve`, { method: 'PUT' }),
+      executeWithFallback(
+        () => request(`/maintenance/${id}/approve`, { method: 'PUT' }),
+        () => mockApi.maintenance.approveMaintenance(id)
+      ),
     resolveMaintenance: (id: number) => 
-      request(`/maintenance/${id}/resolve`, { method: 'PUT' })
+      executeWithFallback(
+        () => request(`/maintenance/${id}/resolve`, { method: 'PUT' }),
+        () => mockApi.maintenance.resolveMaintenance(id)
+      )
   },
 
   // Physical Audits
   audits: {
-    getAudits: () => request('/audits'),
+    getAudits: () => 
+      executeWithFallback(
+        () => request('/audits'),
+        () => mockApi.audits.getAudits()
+      ),
     saveAuditStatus: (cycleId: number, assetTag: string, status: string) => 
-      request('/audits/save', { method: 'POST', body: JSON.stringify({ cycleId, assetTag, status }) })
+      executeWithFallback(
+        () => request('/audits/save', { method: 'POST', body: JSON.stringify({ cycleId, assetTag, status }) }),
+        () => mockApi.audits.saveAuditStatus(cycleId, assetTag, status)
+      )
   },
 
   // Procurement & Inventory
   procurement: {
-    getProducts: () => request('/products'),
-    getVendors: () => request('/vendors'),
-    getItemMasters: () => request('/item-masters'),
+    getProducts: () => 
+      executeWithFallback(
+        () => request('/products'),
+        () => mockApi.procurement.getProducts()
+      ),
+    getVendors: () => 
+      executeWithFallback(
+        () => request('/vendors'),
+        () => mockApi.procurement.getVendors()
+      ),
+    getItemMasters: () => 
+      executeWithFallback(
+        () => request('/item-masters'),
+        () => mockApi.procurement.getItemMasters()
+      ),
     createItemMaster: (item: any) => 
-      request('/item-masters', { method: 'POST', body: JSON.stringify(item) }),
-    getOrders: () => request('/orders'),
+      executeWithFallback(
+        () => request('/item-masters', { method: 'POST', body: JSON.stringify(item) }),
+        () => mockApi.procurement.createItemMaster(item)
+      ),
+    getOrders: () => 
+      executeWithFallback(
+        () => request('/orders'),
+        () => mockApi.procurement.getOrders()
+      ),
     createOrder: (order: any) => 
-      request('/orders', { method: 'POST', body: JSON.stringify(order) })
+      executeWithFallback(
+        () => request('/orders', { method: 'POST', body: JSON.stringify(order) }),
+        () => mockApi.procurement.createOrder(order)
+      )
   },
 
   // Notifications & Compliance Logs
   notifications: {
-    getNotifications: () => request('/notifications'),
+    getNotifications: () => 
+      executeWithFallback(
+        () => request('/notifications'),
+        () => mockApi.notifications.getNotifications()
+      ),
     markRead: (id: string) => 
-      request(`/notifications/${id}/read`, { method: 'PUT' }),
+      executeWithFallback(
+        () => request(`/notifications/${id}/read`, { method: 'PUT' }),
+        () => mockApi.notifications.markRead(id)
+      ),
     markAllRead: () => 
-      request('/notifications/read-all', { method: 'PUT' })
+      executeWithFallback(
+        () => request('/notifications/read-all', { method: 'PUT' }),
+        () => mockApi.notifications.markAllRead()
+      )
   },
   logs: {
-    getLogs: () => request('/logs')
+    getLogs: () => 
+      executeWithFallback(
+        () => request('/logs'),
+        () => mockApi.logs.getLogs()
+      )
   }
 };
